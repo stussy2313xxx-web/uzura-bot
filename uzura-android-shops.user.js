@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          うずら BOT Android — ショップ・購入通知
 // @namespace     uzura.bot.android.shops
-// @version       2.1.44.10929
+// @version       2.1.44.10930
 // @description   Android版。Shopify、Supreme、HUMAN MADE、Buffer、Palaceなどの購入補助とDiscord購入通知。
 // @match         https://*/*
 // @run-at        document-start
@@ -229,13 +229,32 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
   const shopId = 'PA01524832';
   const intentKey = 'uzura-vallad-cart-intent';
   const scheduleKey = 'uzura-vallad-schedule-v1';
+  const logKey = 'uzura-vallad-run-log-v1';
   const watchMs = 120000;
   const pollMs = 300;
   const catalogUrl = new URL('/', url.origin);
   catalogUrl.searchParams.set('mode', 'srh');
   const productUrl = id => new URL('/?pid=' + id, url.origin);
   const normalize = value => String(value ?? '').normalize('NFKC').trim().replace(/\s+/g, ' ').toUpperCase();
+  const productName = value => normalize(String(value ?? '').replace(/[\u200B-\u200D\uFEFF]/g, ''))
+    .replace(/\s*×\s*|\s+X\s+/g, 'X');
+  const matchesName = (actual, expected) => productName(actual) === productName(expected);
   const validQuantity = quantity => Number.isInteger(quantity) && quantity >= 1 && quantity <= 20;
+  const loadLog = () => {
+    try {
+      const entries = JSON.parse(localStorage.getItem(logKey) || '[]');
+      return Array.isArray(entries) ? entries : [];
+    } catch { return []; }
+  };
+  let entries = loadLog();
+  const logView = () => document.querySelector('#uzura-vallad [data-run-log]');
+  function log(message) {
+    const time = new Date(Date.now() + 9 * 3600000).toISOString().slice(11, 19);
+    entries = [...entries.slice(-24), time + ' ' + message];
+    try { localStorage.setItem(logKey, JSON.stringify(entries)); } catch {}
+    const view = logView();
+    if (view) view.textContent = entries.join('\n');
+  }
 
   function readProduct(doc, id = pid) {
     const form = doc.querySelector('form[name="product_form"]');
@@ -277,7 +296,7 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
   function parseTarget(value, by) {
     const code = normalize(value);
     if (by === 'name') {
-      if (code && code.length <= 200) return { name: code };
+      if (productName(value) && code.length <= 200) return { name: code };
       throw new Error('ショップ表記どおりの商品名を入力してください');
     }
     if (/^\d+$/.test(code)) return { id: code };
@@ -293,7 +312,7 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
 
   function scheduledChoice(item, task) {
     if (task.id && String(item.product.id) !== task.id) return null;
-    if (task.name && normalize(item.product.name) !== task.name) return null;
+    if (task.name && !matchesName(item.product.name, task.name)) return null;
     const modelMatch = !task.model || normalize(item.product.model_number) === task.model;
     const candidates = item.sizes.filter((size, index) =>
       (modelMatch || normalize(item.product.variants[index]?.model_number) === task.model) &&
@@ -325,35 +344,45 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
   }
 
   function catalogIds(doc, name) {
-    return [...new Set(Array.from(doc?.querySelectorAll('.prd-lst-name a[href], a.box__inner[href]') || []).slice(0, 12).map(link => {
+    const ids = new Set();
+    for (const link of doc?.querySelectorAll('.prd-lst-name a[href], a.box__inner[href]') || []) {
       const title = link.querySelector('.box__name')?.textContent ?? link.textContent;
-      if (name && normalize(title) !== name) return null;
+      if (name && !matchesName(title, name)) continue;
       const address = new URL(link.getAttribute('href'), catalogUrl);
       const id = address.searchParams.get('pid');
-      return address.origin === url.origin && address.pathname === '/' && /^\d+$/.test(id || '') ? id : null;
-    }).filter(Boolean))];
+      if (address.origin !== url.origin || address.pathname !== '/' || !/^\d+$/.test(id || '')) continue;
+      ids.add(id);
+      if (!name && ids.size === 12) break;
+    }
+    return [...ids];
   }
 
-  async function findScheduledItem(task, signal) {
+  async function findScheduledItem(task, signal, report) {
     const deadline = task.at + watchMs;
     const newest = new URL(catalogUrl);
     newest.searchParams.set('sort', 'n');
     const ids = task.id ? [task.id] : catalogIds(await fetchPage(newest, signal, deadline), task.name);
     if (task.name && ids.length > 1) throw new Error('一致する商品が複数あります。商品IDを指定してください');
+    if (task.name && !ids.length) report('新着一覧に一致する商品名がありません。掲載を待っています。');
     const matches = [];
     for (const [index, id] of ids.entries()) {
       if (index) await new Promise(resolve => setTimeout(resolve, pollMs));
       if (signal.aborted || Date.now() >= deadline) return null;
       const doc = await fetchPage(productUrl(id), signal, deadline);
-      if (!doc?.querySelector('form[name="product_form"]')) continue;
+      if (!doc?.querySelector('form[name="product_form"]')) {
+        if (task.name) report('一覧では一致しました（商品ID ' + id + '）。商品詳細の公開を待っています。');
+        continue;
+      }
       const item = readProduct(doc, id);
       const choice = scheduledChoice(item, task);
       if (choice) matches.push({ id, item, choice });
-      else if (task.id || (task.name && normalize(item.product.name) === task.name)) {
+      else if (task.id || (task.name && matchesName(item.product.name, task.name))) {
         throw new Error(item.sizes.every(size => !size.name)
           ? 'この商品はサイズ指定なしです。サイズ欄を空にして実行してください'
-          : '指定サイズがありません。ショップ表記どおりのサイズを入力してください');
+          : (task.size ? '指定サイズがありません。' : 'サイズを入力してください。') +
+            ' 選択肢 ' + item.sizes.map(size => size.name).join(' / '));
       }
+      else if (task.name) report('一覧と商品詳細の名前が一致しません（商品ID ' + id + '）。');
     }
     if (matches.length > 1) throw new Error('一致する商品が複数あります。商品IDを指定してください');
     const match = matches[0];
@@ -395,7 +424,11 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
       }
       #uzura-vallad button:not(:disabled) { cursor: pointer; }
     `;
-    panel.append(style);
+    const history = document.createElement('details');
+    history.innerHTML = '<summary>実行ログ（日本時間）</summary><pre data-run-log style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px"></pre>';
+    history.style.marginTop = '10px';
+    history.querySelector('pre').textContent = entries.join('\n') || 'この版での実行ログはまだありません。';
+    panel.append(style, history);
     document.body.append(panel);
     document.dispatchEvent(new Event('uzura-vallad-panel-mounted'));
   }
@@ -420,12 +453,16 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
       '<p><label>発売日時（日本時間）<br><input data-at type="datetime-local" style="max-width:100%;font-size:16px"></label></p>' +
       '<p><button type="button" data-arm>発売時刻に開始</button> <button type="button" data-now>すぐ実行</button> ' +
       '<button type="button" data-stop disabled>停止</button></p><p data-status role="status"></p>' +
-      '<small>商品IDは商品URLの pid= に続く数字。商品名・型番は新着一覧の先頭12件と完全一致。サイズ展開がない商品はサイズ欄を空欄にします。</small>';
+      '<small>商品IDは商品URLの pid= に続く数字。商品名は色名まで入力。型番は新着一覧の先頭12商品を確認します。サイズ展開がない商品はサイズ欄を空欄にします。</small>';
     const field = name => panel.querySelector('[data-' + name + ']');
     const by = field('by'), code = field('code'), size = field('size'), qty = field('qty'), at = field('at');
     at.value = new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10) + 'T20:00';
     const arm = field('arm'), now = field('now'), stop = field('stop');
-    const say = message => { field('status').textContent = message; };
+    const say = message => {
+      const status = field('status');
+      if (status.textContent !== message) log(message);
+      status.textContent = message;
+    };
     let timer, controller;
     function active(value) {
       for (const input of [by, code, size, qty, at, arm, now]) input.disabled = value;
@@ -442,26 +479,34 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
       const current = new AbortController();
       controller = current;
       let foundName;
-      say('指定商品とサイズの在庫を確認中…');
+      let attempts = 0;
+      log('実行開始（' + (task.name ? '商品名' : '商品コード') + '） ' + task.code +
+        ' / サイズ ' + (task.size || '指定なし') + ' / 数量 ' + task.quantity);
+      say(task.name ? '新着一覧から商品名を検索中…' : '指定商品とサイズの在庫を確認中…');
       function expire() {
         clear();
-        say(foundName ? foundName + '：商品は見つかりましたが、指定数量をカートに入れられず2分で終了しました。'
-          : '2分で終了しました。指定した商品が見つかりませんでした。商品名・商品IDを確認してください。');
+        say((foundName ? foundName + '：商品は見つかりましたが、指定数量をカートに入れられず2分で終了しました。'
+          : '2分で終了しました。指定した商品が見つかりませんでした。商品名・商品IDを確認してください。') + '（確認 ' + attempts + ' 回）');
       }
       try {
         while (!current.signal.aborted && Date.now() < task.at + watchMs) {
-          const match = await findScheduledItem(task, current.signal);
+          attempts++;
+          const match = await findScheduledItem(task, current.signal, message => {
+            if (!current.signal.aborted) say(message);
+          });
           if (current.signal.aborted || Date.now() >= task.at + watchMs) break;
           if (match?.ready) {
             sessionStorage.setItem(intentKey, JSON.stringify({ pid: match.id, name: match.choice.name,
               quantity: task.quantity, expires: task.at + watchMs, scheduled: task }));
             sessionStorage.removeItem(scheduleKey);
-            say('対象商品が見つかりました。商品詳細へ移動します。');
+            say('対象商品が見つかりました（商品ID ' + match.id + '）。商品詳細へ移動します。');
             location.assign(productUrl(match.id).href);
             return;
           }
-          if (match) foundName = match.item.product.name;
-          if (foundName) say(foundName + '：指定数量をカートに入れられる状態を待っています。');
+          if (match) {
+            foundName = match.item.product.name;
+            say(foundName + '：指定数量をカートに入れられる状態を待っています。');
+          }
           await new Promise(resolve => setTimeout(resolve, pollMs));
         }
         if (!current.signal.aborted) expire();
@@ -639,7 +684,8 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
           throw new Error('商品コードまたはサイズが変わったため停止しました');
         }
         submit(select());
-      } catch (error) { showError(error); }
+        log('カートへの追加を送信（商品ID ' + pid + '）。');
+      } catch (error) { showError(error); log(error.message || 'カートへの追加を停止しました'); }
     }
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
