@@ -1,8 +1,8 @@
-# 対応店舗一覧 v2.1.43.10918
+# 対応店舗一覧 v2.1.44.10922
 
-専用処理: メロジョイ／Supreme／PALACE日本公式／HUMAN MADE／Buffer。
+専用処理: メロジョイ／Supreme／PALACE日本公式／HUMAN MADE／Buffer／VALLAD。
 
-追加登録: 97店舗。以下は公式サイトで商品ID・在庫を含む商品一覧とカート情報の取得・形式を確認しました。iPhone実機・実カート追加・決済は未検証です。「購入成功確認済み」を意味しません。
+Shopifyの追加登録: 96店舗。以下は公式サイトで商品ID・在庫を含む商品一覧とカート情報の取得・形式を確認しました。iPhone実機・実カート追加・決済は未検証です。「購入成功確認済み」を意味しません。
 
 ## ストリート・スニーカー
 
@@ -15,7 +15,7 @@
 | WTAPS | https://wtaps.com | 商品取得確認・共通処理登録済み |
 | NEIGHBORHOOD | https://www.neighborhood.jp | 商品取得確認・共通処理登録済み |
 | BAPE | https://jp.bape.com | 商品取得確認・共通処理登録済み |
-| VALLAD | https://valladstudio.com | 商品取得確認・共通処理登録済み |
+| VALLAD | https://test.valladstudio.com/ | カラーミー専用。商品詳細でサイズ・数量選択、在庫待ち、カート追加補助 |
 | UNION TOKYO | https://www.uniontokyo.jp | 商品取得確認・共通処理登録済み |
 | JJJJOUND | https://www.jjjjound.com | 商品取得確認・共通処理登録済み |
 | GDC | https://gdc.tokyo | 商品取得確認・共通処理登録済み |

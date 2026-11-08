@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         うずら BOT — Mellojoy・Shop対応
 // @namespace    uzura.mellojoy.shop
-// @version      2.1.44.10920
+// @version      2.1.44.10922
 // @updateURL    https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.meta.js
 // @downloadURL  https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.user.js
 // @description  Mellojoy・Shopify・Supreme・HUMAN MADE・Buffer・Palaceの購入補助。購入成功時のDiscord通知に対応。
@@ -14,7 +14,7 @@
 // @inject-into  content
 // ==/UserScript==
 // Store registry: catalog schema checked using read-only requests on 2026-11-06.
-const UZURA_STORES = [{"name":"STÜSSY","hosts":["jp.stussy.com"],"group":"street"},{"name":"A+S","hosts":["architectureandsneakers.com"],"group":"street"},{"name":"DOVER STREET MARKET GINZA","hosts":["shop-jp.doverstreetmarket.com"],"group":"street"},{"name":"NUBIAN","hosts":["nubiantokyo.com"],"group":"street"},{"name":"WTAPS","hosts":["wtaps.com"],"group":"street"},{"name":"NEIGHBORHOOD","hosts":["neighborhood.jp"],"group":"street"},{"name":"BAPE","hosts":["jp.bape.com"],"group":"street"},{"name":"VALLAD","hosts":["valladstudio.com"],"group":"street"},{"name":"UNION TOKYO","hosts":["uniontokyo.jp"],"group":"street"},{"name":"JJJJOUND","hosts":["jjjjound.com"],"group":"street"},{"name":"GDC","hosts":["gdc.tokyo"],"group":"street"},{"name":"NEW ERA","hosts":["neweracap.jp"],"group":"street"},{"name":"mita sneakers","hosts":["mita-sneakers.co.jp"],"group":"street"},{"name":"WIND AND SEA","hosts":["windandsea.jp"],"group":"street"},{"name":"FTC","hosts":["ftcsf.com"],"group":"street"},{"name":"UNDEFEATED","hosts":["undefeated.jp"],"group":"street"},{"name":"HUF","hosts":["hufworldwide.jp"],"group":"street"},{"name":"SC Subculture","hosts":["sc-subculture.jp"],"group":"street"},{"name":"Denim Tears","hosts":["denimtears.com"],"group":"street"},{"name":"Carhartt WIP","hosts":["carhartt-wip.jp"],"group":"street"},{"name":"FreshService","hosts":["freshservice.jp"],"group":"street"},{"name":"Aimé Leon Dore","hosts":["aimeleondore.com"],"group":"street"},{"name":"Cactus Plant Flea Market","hosts":["cactusplantfleamarket.com"],"group":"street"},{"name":"NOAH","hosts":["noahny.com"],"group":"street"},{"name":"Awake NY","hosts":["awakenyclothing.com"],"group":"street"},{"name":"BlackEyePatch","hosts":["blackeyepatch.com"],"group":"street"},{"name":"KICKS LAB.","hosts":["kickslab.com"],"group":"street"},{"name":"CONVERSE","hosts":["converse.co.jp"],"group":"street"},{"name":"Clarks","hosts":["clarks.co.jp"],"group":"street"},{"name":"sacai","hosts":["sacai.jp"],"group":"street"},{"name":"Graphpaper","hosts":["graphpaper-tokyo.com"],"group":"street"},{"name":"N.HOOLYWOOD","hosts":["n-hoolywood.com"],"group":"street"},{"name":"Fear of God","hosts":["fearofgod.com"],"group":"street"},{"name":"Gallery Dept.","hosts":["gallerydept.com"],"group":"street"},{"name":"#FR2","hosts":["fr2.tokyo"],"group":"street"},{"name":"Liberaiders","hosts":["liberaiders.jp"],"group":"street"},{"name":"SUICOKE","hosts":["suicoke.com"],"group":"street"},{"name":"KEEN","hosts":["keenfootwear.jp"],"group":"street"},{"name":"Salomon","hosts":["salomon.jp"],"group":"street"},{"name":"Hellstar","hosts":["hellstar.com"],"group":"street"},{"name":"Sp5der","hosts":["kingspider.co"],"group":"street"},{"name":"Brain Dead","hosts":["wearebraindead.com"],"group":"street"},{"name":"PLEASURES","hosts":["pleasuresnow.com"],"group":"street"},{"name":"Dime","hosts":["dimemtl.com"],"group":"street"},{"name":"Polar Skate Co.","hosts":["polarskateco.com"],"group":"street"},{"name":"ERL","hosts":["erl.store"],"group":"street"},{"name":"Aries","hosts":["ariesarise.com"],"group":"street"},{"name":"BODE","hosts":["bode.com"],"group":"street"},{"name":"Patta","hosts":["patta.nl"],"group":"street"},{"name":"Anti Social Social Club","hosts":["antisocialsocialclub.com"],"group":"street"},{"name":"REPRESENT","hosts":["representclo.com"],"group":"street"},{"name":"Trapstar","hosts":["uk.trapstarlondon.com"],"group":"street"},{"name":"Corteiz","hosts":["corteiz.com"],"group":"street"},{"name":"PATRICK","hosts":["patrick.jp"],"group":"street"},{"name":"LFYT","hosts":["lfyt.jp"],"group":"street"},{"name":"V.A.","hosts":["vatokyo.com"],"group":"street"},{"name":"Diaspora","hosts":["diasporaskateboards.com"],"group":"skate"},{"name":"Evisen","hosts":["shop.evisenskateboards.com"],"group":"skate"},{"name":"Quasi","hosts":["quasiskateboards.com"],"group":"skate"},{"name":"Last Resort AB","hosts":["lastresortab.com"],"group":"skate"},{"name":"Frog","hosts":["frogskateboards.com"],"group":"skate"},{"name":"THRASHER","hosts":["shop.thrashermagazine.com"],"group":"skate"},{"name":"WKND","hosts":["wkndbrand.com"],"group":"skate"},{"name":"Bronze 56k","hosts":["shop.bronze56k.com"],"group":"skate"},{"name":"Butter Goods","hosts":["buttergoods.com"],"group":"skate"},{"name":"ちいかわマーケット","hosts":["chiikawamarket.jp"],"group":"hobby"},{"name":"hololive production","hosts":["shop.hololivepro.com"],"group":"hobby"},{"name":"JUMP SHOP","hosts":["jumpshop-benelic.com"],"group":"hobby"},{"name":"Filmarks Store","hosts":["store.filmarks.com"],"group":"hobby"},{"name":"Kaikai Kiki","hosts":["store.kaikaikiki.com"],"group":"hobby"},{"name":"9090","hosts":["yz-store.com"],"group":"hobby","collection":"9090"},{"name":"LIBERTY WALK","hosts":["lbwk.jp"],"group":"hobby"},{"name":"ANNA SUI","hosts":["annasui.co.jp"],"group":"ladies"},{"name":"FORGET ME NOTS","hosts":["forgetmenots.jp"],"group":"ladies"},{"name":"DEADLY DOLL","hosts":["deadlydoll.com"],"group":"ladies"},{"name":"Darich","hosts":["darich.shop"],"group":"ladies"},{"name":"Mame Kurogouchi","hosts":["mamekurogouchi.com"],"group":"ladies"},{"name":"louren","hosts":["louren.jp"],"group":"ladies"},{"name":"MURRAL","hosts":["murral.jp"],"group":"ladies"},{"name":"JUEMI","hosts":["juemi.jp"],"group":"ladies"},{"name":"COHINA","hosts":["cohina.net"],"group":"ladies"},{"name":"EDIKTED","hosts":["edikted.com"],"group":"ladies"},{"name":"House of Sunny","hosts":["houseofsunny.com"],"group":"ladies"},{"name":"Alo Yoga","hosts":["aloyoga.com"],"group":"ladies"},{"name":"Rouje","hosts":["rouje.com"],"group":"ladies"},{"name":"Marine Serre","hosts":["marineserre.com"],"group":"ladies"},{"name":"Paloma Wool","hosts":["palomawool.com"],"group":"ladies"},{"name":"Andmary","hosts":["andmary.co.jp"],"group":"ladies"},{"name":"JAM HOME MADE","hosts":["jamhomemade.com"],"group":"ladies"},{"name":"CHARI&CO","hosts":["chariandco.jp"],"group":"ladies"},{"name":"Maker’s Watch Knot","hosts":["knot-designs.com"],"group":"other"},{"name":"UNDONE","hosts":["undone.com"],"group":"other"},{"name":"Lorier","hosts":["lorierwatches.com"],"group":"other"},{"name":"MVMT","hosts":["mvmt.com"],"group":"other"},{"name":"Serica","hosts":["serica-watches.com"],"group":"other"},{"name":"anOrdain","hosts":["anordain.com"],"group":"other"},{"name":"WHIMSY","hosts":["whimsysocks.com"],"group":"other"}];
+const UZURA_STORES = [{"name":"STÜSSY","hosts":["jp.stussy.com"],"group":"street"},{"name":"A+S","hosts":["architectureandsneakers.com"],"group":"street"},{"name":"DOVER STREET MARKET GINZA","hosts":["shop-jp.doverstreetmarket.com"],"group":"street"},{"name":"NUBIAN","hosts":["nubiantokyo.com"],"group":"street"},{"name":"WTAPS","hosts":["wtaps.com"],"group":"street"},{"name":"NEIGHBORHOOD","hosts":["neighborhood.jp"],"group":"street"},{"name":"BAPE","hosts":["jp.bape.com"],"group":"street"},{"name":"UNION TOKYO","hosts":["uniontokyo.jp"],"group":"street"},{"name":"JJJJOUND","hosts":["jjjjound.com"],"group":"street"},{"name":"GDC","hosts":["gdc.tokyo"],"group":"street"},{"name":"NEW ERA","hosts":["neweracap.jp"],"group":"street"},{"name":"mita sneakers","hosts":["mita-sneakers.co.jp"],"group":"street"},{"name":"WIND AND SEA","hosts":["windandsea.jp"],"group":"street"},{"name":"FTC","hosts":["ftcsf.com"],"group":"street"},{"name":"UNDEFEATED","hosts":["undefeated.jp"],"group":"street"},{"name":"HUF","hosts":["hufworldwide.jp"],"group":"street"},{"name":"SC Subculture","hosts":["sc-subculture.jp"],"group":"street"},{"name":"Denim Tears","hosts":["denimtears.com"],"group":"street"},{"name":"Carhartt WIP","hosts":["carhartt-wip.jp"],"group":"street"},{"name":"FreshService","hosts":["freshservice.jp"],"group":"street"},{"name":"Aimé Leon Dore","hosts":["aimeleondore.com"],"group":"street"},{"name":"Cactus Plant Flea Market","hosts":["cactusplantfleamarket.com"],"group":"street"},{"name":"NOAH","hosts":["noahny.com"],"group":"street"},{"name":"Awake NY","hosts":["awakenyclothing.com"],"group":"street"},{"name":"BlackEyePatch","hosts":["blackeyepatch.com"],"group":"street"},{"name":"KICKS LAB.","hosts":["kickslab.com"],"group":"street"},{"name":"CONVERSE","hosts":["converse.co.jp"],"group":"street"},{"name":"Clarks","hosts":["clarks.co.jp"],"group":"street"},{"name":"sacai","hosts":["sacai.jp"],"group":"street"},{"name":"Graphpaper","hosts":["graphpaper-tokyo.com"],"group":"street"},{"name":"N.HOOLYWOOD","hosts":["n-hoolywood.com"],"group":"street"},{"name":"Fear of God","hosts":["fearofgod.com"],"group":"street"},{"name":"Gallery Dept.","hosts":["gallerydept.com"],"group":"street"},{"name":"#FR2","hosts":["fr2.tokyo"],"group":"street"},{"name":"Liberaiders","hosts":["liberaiders.jp"],"group":"street"},{"name":"SUICOKE","hosts":["suicoke.com"],"group":"street"},{"name":"KEEN","hosts":["keenfootwear.jp"],"group":"street"},{"name":"Salomon","hosts":["salomon.jp"],"group":"street"},{"name":"Hellstar","hosts":["hellstar.com"],"group":"street"},{"name":"Sp5der","hosts":["kingspider.co"],"group":"street"},{"name":"Brain Dead","hosts":["wearebraindead.com"],"group":"street"},{"name":"PLEASURES","hosts":["pleasuresnow.com"],"group":"street"},{"name":"Dime","hosts":["dimemtl.com"],"group":"street"},{"name":"Polar Skate Co.","hosts":["polarskateco.com"],"group":"street"},{"name":"ERL","hosts":["erl.store"],"group":"street"},{"name":"Aries","hosts":["ariesarise.com"],"group":"street"},{"name":"BODE","hosts":["bode.com"],"group":"street"},{"name":"Patta","hosts":["patta.nl"],"group":"street"},{"name":"Anti Social Social Club","hosts":["antisocialsocialclub.com"],"group":"street"},{"name":"REPRESENT","hosts":["representclo.com"],"group":"street"},{"name":"Trapstar","hosts":["uk.trapstarlondon.com"],"group":"street"},{"name":"Corteiz","hosts":["corteiz.com"],"group":"street"},{"name":"PATRICK","hosts":["patrick.jp"],"group":"street"},{"name":"LFYT","hosts":["lfyt.jp"],"group":"street"},{"name":"V.A.","hosts":["vatokyo.com"],"group":"street"},{"name":"Diaspora","hosts":["diasporaskateboards.com"],"group":"skate"},{"name":"Evisen","hosts":["shop.evisenskateboards.com"],"group":"skate"},{"name":"Quasi","hosts":["quasiskateboards.com"],"group":"skate"},{"name":"Last Resort AB","hosts":["lastresortab.com"],"group":"skate"},{"name":"Frog","hosts":["frogskateboards.com"],"group":"skate"},{"name":"THRASHER","hosts":["shop.thrashermagazine.com"],"group":"skate"},{"name":"WKND","hosts":["wkndbrand.com"],"group":"skate"},{"name":"Bronze 56k","hosts":["shop.bronze56k.com"],"group":"skate"},{"name":"Butter Goods","hosts":["buttergoods.com"],"group":"skate"},{"name":"ちいかわマーケット","hosts":["chiikawamarket.jp"],"group":"hobby"},{"name":"hololive production","hosts":["shop.hololivepro.com"],"group":"hobby"},{"name":"JUMP SHOP","hosts":["jumpshop-benelic.com"],"group":"hobby"},{"name":"Filmarks Store","hosts":["store.filmarks.com"],"group":"hobby"},{"name":"Kaikai Kiki","hosts":["store.kaikaikiki.com"],"group":"hobby"},{"name":"9090","hosts":["yz-store.com"],"group":"hobby","collection":"9090"},{"name":"LIBERTY WALK","hosts":["lbwk.jp"],"group":"hobby"},{"name":"ANNA SUI","hosts":["annasui.co.jp"],"group":"ladies"},{"name":"FORGET ME NOTS","hosts":["forgetmenots.jp"],"group":"ladies"},{"name":"DEADLY DOLL","hosts":["deadlydoll.com"],"group":"ladies"},{"name":"Darich","hosts":["darich.shop"],"group":"ladies"},{"name":"Mame Kurogouchi","hosts":["mamekurogouchi.com"],"group":"ladies"},{"name":"louren","hosts":["louren.jp"],"group":"ladies"},{"name":"MURRAL","hosts":["murral.jp"],"group":"ladies"},{"name":"JUEMI","hosts":["juemi.jp"],"group":"ladies"},{"name":"COHINA","hosts":["cohina.net"],"group":"ladies"},{"name":"EDIKTED","hosts":["edikted.com"],"group":"ladies"},{"name":"House of Sunny","hosts":["houseofsunny.com"],"group":"ladies"},{"name":"Alo Yoga","hosts":["aloyoga.com"],"group":"ladies"},{"name":"Rouje","hosts":["rouje.com"],"group":"ladies"},{"name":"Marine Serre","hosts":["marineserre.com"],"group":"ladies"},{"name":"Paloma Wool","hosts":["palomawool.com"],"group":"ladies"},{"name":"Andmary","hosts":["andmary.co.jp"],"group":"ladies"},{"name":"JAM HOME MADE","hosts":["jamhomemade.com"],"group":"ladies"},{"name":"CHARI&CO","hosts":["chariandco.jp"],"group":"ladies"},{"name":"Maker’s Watch Knot","hosts":["knot-designs.com"],"group":"other"},{"name":"UNDONE","hosts":["undone.com"],"group":"other"},{"name":"Lorier","hosts":["lorierwatches.com"],"group":"other"},{"name":"MVMT","hosts":["mvmt.com"],"group":"other"},{"name":"Serica","hosts":["serica-watches.com"],"group":"other"},{"name":"anOrdain","hosts":["anordain.com"],"group":"other"},{"name":"WHIMSY","hosts":["whimsysocks.com"],"group":"other"}];
 const uzuraStoreFor = host => UZURA_STORES.find(s => s.hosts.includes(String(host).toLowerCase().replace(/^www\./, ''))) || null;
 const UZURA_CURRENT = uzuraStoreFor(location.hostname);
 const UZURA_PENDING_HOSTS = ["marketstudios.com", "chinatownmarket.com", "nagano-market.jp", "herlipto.jp"];
@@ -25,7 +25,7 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
   'use strict';
   if (window.top !== window || (!UZURA_CURRENT && !/(^|\.)(?:mellojoy(?:lucky\.cn|japan\.com|us\.com)|shop\.app|supreme\.com|humanmade\.jp|buffering\.jp)$|^(?:checkout\.)?jp\.palaceskateboards\.com$/i.test(location.hostname))) return;
   const VALID = /^https:\/\/discord\.com\/api\/webhooks\/\d+\/[\w-]+$/;
-  const FIXED_WEBHOOK = ''; // Administrator inserts the shared destination here once.
+  const FIXED_WEBHOOK = ''; // Use the notification destination saved in the script manager. // Administrator inserts the shared destination here once.
   // Initial distribution saves the shared destination once; public updates use GM storage.
   if (VALID.test(FIXED_WEBHOOK)) await GM.setValue('uzura_notify_hook', FIXED_WEBHOOK);
   // Initial distribution saves the shared destination once; public updates use GM storage.
@@ -84,6 +84,177 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
 
 
 
+(function uzuraVallad() {
+  'use strict';
+  const host = 'test.valladstudio.com';
+  if (location.hostname !== host || window.top !== window) return;
+  const url = new URL(location.href);
+  const pid = url.searchParams.get('pid');
+  if (url.pathname !== '/' || !/^\d+$/.test(pid || '')) return;
+
+  const shopId = 'PA01524832';
+  const intentKey = 'uzura-vallad-cart-intent';
+  const catalogUrl = new URL('/', url.origin);
+  catalogUrl.searchParams.set('mode', 'srh');
+
+  function readProduct(doc) {
+    const form = doc.querySelector('form[name="product_form"]');
+    const fields = form?.elements;
+    const action = form && new URL(form.getAttribute('action'), url);
+    if (!action || action.origin !== url.origin || action.pathname !== '/cart/proxy/basket/items/add' ||
+        form.method !== 'post' || fields.namedItem('shop_id')?.value !== shopId ||
+        fields.namedItem('shop_domain')?.value !== host || fields.namedItem('product_id')?.value !== pid ||
+        !fields.namedItem('reference_token')?.value) {
+      throw new Error('VALLADの商品フォームを確認できません');
+    }
+
+    const data = Array.from(doc.scripts, script => script.textContent.match(/^\s*var Colorme = (\{[^\n]*\});\s*$/m)?.[1]).find(Boolean);
+    const product = data && JSON.parse(data).product;
+    if (!product || product.shop_uid !== shopId || String(product.id) !== pid || !Array.isArray(product.variants)) {
+      throw new Error('VALLADの商品情報を確認できません');
+    }
+
+    const sizeField = form.querySelector('select[name="option1"]');
+    if (form.querySelector('select[name="option2"], input[name="option"]') || (sizeField && !product.variants.length)) {
+      throw new Error('この商品のオプション形式は未対応です');
+    }
+    const sizes = product.variants.length ? product.variants.map(variant => ({
+      name: variant.option1_value,
+      stock: variant.stock_num,
+      option: sizeField && Array.from(sizeField.options).find(option => option.text.trim() === variant.option1_value),
+    })) : [{ name: '', stock: product.stock_num }];
+    return { product, sizes, sizeField, qtyField: form.querySelector('input[name="product_num"]'),
+      button: form.querySelector('button[type="submit"].btn-addcart') };
+  }
+
+  function available(item, size, quantity) {
+    const variant = item.sizes.find(value => value.name === size);
+    if (!variant || !Number.isInteger(variant.stock)) throw new Error('指定サイズの在庫情報を確認できません');
+    return variant.stock >= quantity && !!item.button && !item.button.matches(':disabled') && !!item.qtyField &&
+      (!size || !!variant.option && !variant.option.disabled && /^\d+,\d+$/.test(variant.option.value));
+  }
+
+  function boot() {
+    if (document.getElementById('uzura-vallad')) return;
+    let resume = null;
+    try {
+      resume = JSON.parse(sessionStorage.getItem(intentKey) || 'null');
+      sessionStorage.removeItem(intentKey);
+    } catch { /* A blocked session store only prevents resuming a stock watch. */ }
+
+    let item;
+    try { item = readProduct(document); }
+    catch (error) { console.warn('[うずら BOT VALLAD]', error.message); return; }
+
+    const panel = document.createElement('details');
+    panel.id = 'uzura-vallad';
+    panel.style.cssText = 'position:fixed;right:10px;bottom:18px;z-index:9999;background:#10213b;color:#fff;border-radius:12px;padding:12px;width:min(300px,calc(100vw - 44px));font:16px system-ui;box-shadow:0 3px 14px #0005';
+    panel.innerHTML = '<summary>うずら BOT · VALLAD</summary><p data-product></p><p><label>サイズ <select data-size></select></label> <label>数量 <input data-qty type="number" min="1" max="20" value="1" style="width:4em"></label></p><p><button type="button" data-add>カートに入れる</button> <button type="button" data-watch>在庫を待つ</button></p><p data-status role="status"></p><a data-catalog style="color:#fff">商品一覧</a>';
+    const find = name => panel.querySelector('[data-' + name + ']');
+    const size = find('size'), qty = find('qty'), status = find('status');
+    const add = find('add'), watch = find('watch');
+    find('product').textContent = item.product.name;
+    find('catalog').href = catalogUrl.href;
+    for (const choice of item.sizes) {
+      const option = document.createElement('option');
+      option.value = choice.name;
+      option.textContent = choice.name || 'サイズ指定なし';
+      size.append(option);
+    }
+    if (item.sizes.length > 1) {
+      const prompt = document.createElement('option');
+      prompt.textContent = '選択してください';
+      prompt.disabled = true;
+      prompt.selected = true;
+      size.prepend(prompt);
+    }
+    document.body.append(panel);
+
+    let submitted = false;
+    let controller = null;
+    const say = text => { status.textContent = text; };
+    const showError = error => say(error.message || '処理を停止しました');
+    const select = () => {
+      const selected = size.options[size.selectedIndex];
+      const quantity = qty.valueAsNumber;
+      if (!selected || selected.disabled || !Number.isInteger(quantity) || quantity < 1 || quantity > 20) {
+        throw new Error('サイズを選び、数量を1〜20で入力してください');
+      }
+      return { name: selected.value, quantity };
+    };
+    function submit(choice) {
+      if (submitted) return;
+      if (!available(item, choice.name, choice.quantity)) throw new Error('指定のサイズ・数量は現在カートに入れられません');
+      if (item.sizeField) item.sizeField.value = item.sizes.find(value => value.name === choice.name).option.value;
+      item.qtyField.value = String(choice.quantity);
+      submitted = true;
+      add.disabled = watch.disabled = true;
+      say('カートへの追加を送信しました。ショップの表示で結果を確認してください。');
+      item.button.click();
+    }
+    add.onclick = () => {
+      if (controller) return;
+      try { submit(select()); } catch (error) { showError(error); }
+    };
+    watch.onclick = async () => {
+      if (controller) { controller.abort(); return; }
+      if (submitted) return;
+      try {
+        const choice = select();
+        if (available(item, choice.name, choice.quantity)) { submit(choice); return; }
+        const run = new AbortController();
+        controller = run;
+        watch.textContent = '停止';
+        add.disabled = size.disabled = qty.disabled = true;
+        const expires = Date.now() + 120000;
+        say('指定サイズ・数量の在庫を最大2分確認します');
+        while (!run.signal.aborted && Date.now() < expires) {
+          const timeout = setTimeout(() => run.abort(), 8000);
+          let text;
+          try {
+            const response = await fetch(url.origin + '/?pid=' + pid, {
+              cache: 'no-store', credentials: 'same-origin', signal: run.signal,
+            });
+            const landed = new URL(response.url);
+            if (!response.ok || landed.origin !== url.origin || landed.searchParams.get('pid') !== pid) {
+              throw new Error('在庫確認を停止しました（HTTP ' + response.status + '）');
+            }
+            const charset = response.headers.get('content-type')?.match(/charset\s*=\s*([^;\s]+)/i)?.[1] || document.characterSet;
+            text = new TextDecoder(charset).decode(await response.arrayBuffer());
+          } finally { clearTimeout(timeout); }
+          if (run.signal.aborted || Date.now() >= expires) break;
+          const current = readProduct(new DOMParser().parseFromString(text, 'text/html'));
+          if (available(current, choice.name, choice.quantity)) {
+            sessionStorage.setItem(intentKey, JSON.stringify({ ...choice, pid, expires }));
+            location.reload();
+            return;
+          }
+          await new Promise(resolve => setTimeout(resolve, 5000));
+        }
+        say(run.signal.aborted ? '在庫確認を停止しました' : '2分で在庫確認を終了しました');
+      } catch (error) {
+        if (controller?.signal.aborted) say('在庫確認を停止しました');
+        else showError(error);
+      } finally {
+        controller = null;
+        watch.textContent = '在庫を待つ';
+        if (!submitted) add.disabled = size.disabled = qty.disabled = false;
+      }
+    };
+    window.addEventListener('pagehide', () => controller?.abort(), { once: true });
+
+    if (resume?.pid === pid && resume.expires > Date.now() && typeof resume.name === 'string' &&
+        Number.isInteger(resume.quantity) && resume.quantity >= 1 && resume.quantity <= 20) {
+      panel.open = true;
+      size.value = resume.name;
+      qty.value = String(resume.quantity);
+      try { submit(select()); } catch (error) { showError(error); }
+    }
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
+  else boot();
+})();
+
 // Customized for うずら from SYNOVAJOY; original functionality and author attribution retained.
 // ===== Ban GOP (thu nghiem): Mellojoy BOT 2.1.43 + SYNOVA Shop BOT 1.9.8 =====
 (function () {
@@ -109,6 +280,7 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
   }
   // ---- BOT Shop: nhu ban rieng (document-end) ----
   var runShop = function () {
+    if (/^(?:(?:test|www)\.)?valladstudio\.com$/i.test(location.hostname)) return;
 
 // (kh\u00f4ng c\u00f3 @noframes: \u00f4 s\u1ed1 th\u1ebb c\u1ee7a Shopify n\u1eb1m trong khung checkout.pci.shopifyinc.com -> script ph\u1ea3i ch\u1ea1y trong khung \u0111\u00f3)
 
