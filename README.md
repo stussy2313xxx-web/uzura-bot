@@ -1,6 +1,6 @@
-# うずら BOT v2.1.44.10922
+# うずら BOT v2.1.44.10924
 
-VALLADは[新しいカラーミーショップ](https://test.valladstudio.com/)の商品詳細ページで使えます。サイズ・数量指定、在庫待ち、カート追加に対応します。注文確定はショップ画面で行います。
+VALLADは[新しいカラーミーショップ](https://test.valladstudio.com/)のトップと商品一覧に「うずら BOT · VALLAD」が表示されます。商品詳細では、サイズ・数量指定、在庫待ち、カート追加ができます。注文確定はショップ画面で行います。
 
 - iPhone。SafariのUserscriptsで [iPhone版](uzura-mellojoy-shop.user.js) を使います。導入済みの場合は、Userscriptsの「Updates」から「Check Updates」を実行してください。
 - Android。FirefoxのTampermonkeyで [メロジョイ版](uzura-android-mellojoy.user.js) と [ショップ版](uzura-android-shops.user.js) を別々に登録します。VALLADはショップ版に入っています。

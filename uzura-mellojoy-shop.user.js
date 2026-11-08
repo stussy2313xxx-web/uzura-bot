@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         うずら BOT — Mellojoy・Shop対応
 // @namespace    uzura.mellojoy.shop
-// @version      2.1.44.10922
+// @version      2.1.44.10924
 // @updateURL    https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.meta.js
 // @downloadURL  https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.user.js
 // @description  Mellojoy・Shopify・Supreme・HUMAN MADE・Buffer・Palaceの購入補助。購入成功時のDiscord通知に対応。
@@ -90,7 +90,9 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
   if (location.hostname !== host || window.top !== window) return;
   const url = new URL(location.href);
   const pid = url.searchParams.get('pid');
-  if (url.pathname !== '/' || !/^\d+$/.test(pid || '')) return;
+  const mode = url.searchParams.get('mode');
+  if (url.pathname !== '/' || (pid !== null && !/^\d+$/.test(pid))) return;
+  if (pid === null && mode && mode !== 'srh') return;
 
   const shopId = 'PA01524832';
   const intentKey = 'uzura-vallad-cart-intent';
@@ -134,8 +136,29 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
       (!size || !!variant.option && !variant.option.disabled && /^\d+,\d+$/.test(variant.option.value));
   }
 
+  function makePanel() {
+    const panel = document.createElement('details');
+    panel.id = 'uzura-vallad';
+    panel.style.cssText = 'position:fixed;right:10px;bottom:calc(18px + env(safe-area-inset-bottom));z-index:2147483647;background:#10213b;color:#fff;border-radius:12px;padding:12px;width:min(300px,calc(100vw - 44px));font:16px system-ui;box-shadow:0 3px 14px #0005';
+    return panel;
+  }
+
+  function showGuide(message) {
+    const panel = makePanel();
+    panel.innerHTML = '<summary>うずら BOT · VALLAD</summary><p data-status role="status"></p><a data-catalog style="color:#fff">商品一覧を開く</a>';
+    panel.querySelector('[data-status]').textContent = message;
+    const link = panel.querySelector('[data-catalog]');
+    link.href = catalogUrl.href;
+    link.hidden = mode === 'srh' && pid === null;
+    document.body.append(panel);
+  }
+
   function boot() {
     if (document.getElementById('uzura-vallad')) return;
+    if (pid === null) {
+      showGuide('商品をタップすると、商品詳細でサイズ・数量を指定できます。');
+      return;
+    }
     let resume = null;
     try {
       resume = JSON.parse(sessionStorage.getItem(intentKey) || 'null');
@@ -144,11 +167,9 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
 
     let item;
     try { item = readProduct(document); }
-    catch (error) { console.warn('[うずら BOT VALLAD]', error.message); return; }
+    catch (error) { showGuide(error.message); return; }
 
-    const panel = document.createElement('details');
-    panel.id = 'uzura-vallad';
-    panel.style.cssText = 'position:fixed;right:10px;bottom:18px;z-index:9999;background:#10213b;color:#fff;border-radius:12px;padding:12px;width:min(300px,calc(100vw - 44px));font:16px system-ui;box-shadow:0 3px 14px #0005';
+    const panel = makePanel();
     panel.innerHTML = '<summary>うずら BOT · VALLAD</summary><p data-product></p><p><label>サイズ <select data-size></select></label> <label>数量 <input data-qty type="number" min="1" max="20" value="1" style="width:4em"></label></p><p><button type="button" data-add>カートに入れる</button> <button type="button" data-watch>在庫を待つ</button></p><p data-status role="status"></p><a data-catalog style="color:#fff">商品一覧</a>';
     const find = name => panel.querySelector('[data-' + name + ']');
     const size = find('size'), qty = find('qty'), status = find('status');
