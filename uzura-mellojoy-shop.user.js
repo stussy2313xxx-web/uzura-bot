@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         うずら BOT — Mellojoy・Shop対応
 // @namespace    uzura.mellojoy.shop
-// @version      2.1.44.10928
+// @version      2.1.44.10929
 // @updateURL    https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.meta.js
 // @downloadURL  https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.user.js
 // @description  Mellojoy・Shopify・Supreme・HUMAN MADE・Buffer・Palaceの購入補助。購入成功時のDiscord通知に対応。
@@ -87,8 +87,9 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
 (function uzuraValladCheckout() {
   'use strict';
 
+  const onCart = location.pathname.startsWith('/cart/');
   if (location.origin !== 'https://test.valladstudio.com' || window.top !== window ||
-      !(location.pathname === '/' || location.pathname.startsWith('/cart/'))) return;
+      !(location.pathname === '/' || onCart)) return;
 
   const key = 'uzura-vallad-checkout-profile-v1';
   const fields = [
@@ -109,8 +110,11 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
   async function start() {
     const panel = document.createElement('details');
     panel.id = 'uzura-vallad-checkout';
-    panel.style.cssText = 'position:fixed;left:10px;bottom:calc(18px + env(safe-area-inset-bottom));z-index:2147483646;background:#10213b;color:#fff;border-radius:12px;padding:10px;font:16px system-ui;max-width:calc(100vw - 44px);max-height:65vh;overflow:auto';
-    panel.innerHTML = '<summary>VALLAD お届け先設定</summary><form autocomplete="off"></form><p role="status"></p>';
+    panel.style.cssText = onCart
+      ? 'position:fixed;right:10px;bottom:calc(18px + env(safe-area-inset-bottom));z-index:2147483647;background:#10213b;color:#fff;border-radius:12px;padding:12px;width:min(300px,calc(100vw - 44px));max-height:65vh;overflow:auto;font:16px system-ui;box-shadow:0 3px 14px #0005'
+      : 'border-top:1px solid #547096;margin-top:12px;padding-top:10px';
+    panel.innerHTML = '<summary></summary><form autocomplete="off"></form><p role="status"></p>';
+    panel.querySelector('summary').textContent = onCart ? 'うずら BOT · VALLAD / お届け先設定' : 'お届け先設定';
     const form = panel.querySelector('form');
     const status = panel.querySelector('[role="status"]');
     const inputs = new Map();
@@ -145,7 +149,7 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
     let applied = new WeakSet();
 
     function fill() {
-      if (!profile || !location.pathname.startsWith('/cart/')) return;
+      if (!profile || !onCart) return;
       const addresses = [...document.querySelectorAll(addressSelector)].filter(visible);
       if (addresses.length !== 1) return;
       const address = addresses[0];
@@ -197,12 +201,18 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
         status.textContent = '保存したお届け先を消去しました。';
       } catch { status.textContent = '消去できませんでした。'; }
     };
-    document.body.append(panel);
-    if (location.pathname.startsWith('/cart/')) {
-      const observer = new MutationObserver(fill);
-      observer.observe(document.body, { childList: true, subtree: true });
-      fill();
+    if (!onCart) {
+      const shopPanel = document.getElementById('uzura-vallad');
+      if (shopPanel) shopPanel.append(panel);
+      else document.addEventListener('uzura-vallad-panel-mounted', () => {
+        document.getElementById('uzura-vallad')?.append(panel);
+      }, { once: true });
+      return;
     }
+    document.body.append(panel);
+    const observer = new MutationObserver(fill);
+    observer.observe(document.body, { childList: true, subtree: true });
+    fill();
   }
 
   const mount = () => start().catch(error => console.warn('VALLAD お届け先設定:', error.message));
@@ -357,7 +367,7 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
   function makePanel() {
     const panel = document.createElement('details');
     panel.id = 'uzura-vallad';
-    panel.style.cssText = 'position:fixed;right:10px;bottom:calc(18px + env(safe-area-inset-bottom));z-index:2147483647;background:#10213b;color:#fff;border-radius:12px;padding:12px;width:min(300px,calc(100vw - 44px));font:16px system-ui;box-shadow:0 3px 14px #0005';
+    panel.style.cssText = 'position:fixed;right:10px;bottom:calc(18px + env(safe-area-inset-bottom));z-index:2147483647;background:#10213b;color:#fff;border-radius:12px;padding:12px;width:min(300px,calc(100vw - 44px));max-height:65vh;overflow:auto;font:16px system-ui;box-shadow:0 3px 14px #0005';
     return panel;
   }
 
@@ -391,6 +401,7 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
     `;
     panel.append(style);
     document.body.append(panel);
+    document.dispatchEvent(new Event('uzura-vallad-panel-mounted'));
   }
 
   function showGuide(message) {
