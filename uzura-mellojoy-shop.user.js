@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         うずら BOT — Mellojoy・Shop対応
 // @namespace    uzura.mellojoy.shop
-// @version      2.1.44.10924
+// @version      2.1.44.10925
 // @updateURL    https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.meta.js
 // @downloadURL  https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.user.js
 // @description  Mellojoy・Shopify・Supreme・HUMAN MADE・Buffer・Palaceの購入補助。購入成功時のDiscord通知に対応。
@@ -96,23 +96,29 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
 
   const shopId = 'PA01524832';
   const intentKey = 'uzura-vallad-cart-intent';
+  const scheduleKey = 'uzura-vallad-schedule-v1';
+  const watchMs = 120000;
+  const pollMs = 5000;
   const catalogUrl = new URL('/', url.origin);
   catalogUrl.searchParams.set('mode', 'srh');
+  const productUrl = id => new URL('/?pid=' + id, url.origin);
+  const normalize = value => String(value ?? '').normalize('NFKC').trim().replace(/\s+/g, ' ').toUpperCase();
+  const validQuantity = quantity => Number.isInteger(quantity) && quantity >= 1 && quantity <= 20;
 
-  function readProduct(doc) {
+  function readProduct(doc, id = pid) {
     const form = doc.querySelector('form[name="product_form"]');
     const fields = form?.elements;
     const action = form && new URL(form.getAttribute('action'), url);
     if (!action || action.origin !== url.origin || action.pathname !== '/cart/proxy/basket/items/add' ||
         form.method !== 'post' || fields.namedItem('shop_id')?.value !== shopId ||
-        fields.namedItem('shop_domain')?.value !== host || fields.namedItem('product_id')?.value !== pid ||
+        fields.namedItem('shop_domain')?.value !== host || fields.namedItem('product_id')?.value !== id ||
         !fields.namedItem('reference_token')?.value) {
       throw new Error('VALLADの商品フォームを確認できません');
     }
 
     const data = Array.from(doc.scripts, script => script.textContent.match(/^\s*var Colorme = (\{[^\n]*\});\s*$/m)?.[1]).find(Boolean);
     const product = data && JSON.parse(data).product;
-    if (!product || product.shop_uid !== shopId || String(product.id) !== pid || !Array.isArray(product.variants)) {
+    if (!product || product.shop_uid !== shopId || String(product.id) !== id || !Array.isArray(product.variants)) {
       throw new Error('VALLADの商品情報を確認できません');
     }
 
@@ -136,6 +142,86 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
       (!size || !!variant.option && !variant.option.disabled && /^\d+,\d+$/.test(variant.option.value));
   }
 
+  function parseTarget(value, by) {
+    const code = normalize(value);
+    if (by === 'name') {
+      if (code && code.length <= 200) return { name: code };
+      throw new Error('ショップ表記どおりの商品名を入力してください');
+    }
+    if (/^\d+$/.test(code)) return { id: code };
+    if (/^https:\/\//i.test(value.trim())) {
+      const address = new URL(value.trim());
+      const id = address.searchParams.get('pid');
+      if (address.origin === url.origin && address.pathname === '/' && /^\d+$/.test(id || '')) return { id };
+    } else if (/^[A-Z0-9][A-Z0-9._/-]{0,63}$/.test(code)) {
+      return { model: code };
+    }
+    throw new Error('商品ID・VALLADの商品URL・英数字の型番を入力してください');
+  }
+
+  function scheduledChoice(item, task) {
+    if (task.id && String(item.product.id) !== task.id) return null;
+    if (task.name && normalize(item.product.name) !== task.name) return null;
+    const modelMatch = !task.model || normalize(item.product.model_number) === task.model;
+    const candidates = item.sizes.filter((size, index) =>
+      (modelMatch || normalize(item.product.variants[index]?.model_number) === task.model) &&
+      (task.size ? normalize(size.name) === task.size : !size.name || !modelMatch));
+    return candidates.length === 1 ? candidates[0] : null;
+  }
+
+  async function fetchPage(address, signal) {
+    const request = new AbortController();
+    const abort = () => request.abort();
+    if (signal.aborted) throw new Error('停止しました');
+    signal.addEventListener('abort', abort, { once: true });
+    const timeout = setTimeout(abort, 8000);
+    try {
+      const response = await fetch(address.href, { cache: 'no-store', credentials: 'same-origin', signal: request.signal });
+      if (response.status === 404) return null;
+      if (!response.ok) throw new Error('サイトの応答により停止しました（HTTP ' + response.status + '）');
+      const landed = new URL(response.url);
+      if (landed.origin !== address.origin || landed.pathname !== '/' ||
+          landed.searchParams.get('pid') !== address.searchParams.get('pid') ||
+          landed.searchParams.get('mode') !== address.searchParams.get('mode')) return null;
+      const charset = response.headers.get('content-type')?.match(/charset\s*=\s*([^;\s]+)/i)?.[1] || document.characterSet;
+      const text = new TextDecoder(charset).decode(await response.arrayBuffer());
+      return new DOMParser().parseFromString(text, 'text/html');
+    } finally {
+      clearTimeout(timeout);
+      signal.removeEventListener('abort', abort);
+    }
+  }
+
+  function catalogIds(doc, name) {
+    return [...new Set(Array.from(doc?.querySelectorAll('.prd-lst-name a[href]') || []).slice(0, 12).map(link => {
+      if (name && normalize(link.textContent) !== name) return null;
+      const address = new URL(link.getAttribute('href'), catalogUrl);
+      const id = address.searchParams.get('pid');
+      return address.origin === url.origin && address.pathname === '/' && /^\d+$/.test(id || '') ? id : null;
+    }).filter(Boolean))];
+  }
+
+  async function findScheduledItem(task, signal) {
+    const newest = new URL(catalogUrl);
+    newest.searchParams.set('sort', 'n');
+    const ids = task.id ? [task.id] : catalogIds(await fetchPage(newest, signal), task.name);
+    if (task.name && ids.length > 1) throw new Error('一致する商品が複数あります。商品IDを指定してください');
+    const matches = [];
+    for (const [index, id] of ids.entries()) {
+      if (index) await new Promise(resolve => setTimeout(resolve, 1000));
+      if (signal.aborted || Date.now() >= task.at + watchMs) return null;
+      const doc = await fetchPage(productUrl(id), signal);
+      if (!doc?.querySelector('form[name="product_form"]')) continue;
+      const item = readProduct(doc, id);
+      const choice = scheduledChoice(item, task);
+      if (choice) matches.push({ id, item, choice });
+      else if (task.id) throw new Error('指定サイズがありません。サイズ展開の有無とショップ表記を確認してください');
+    }
+    if (matches.length > 1) throw new Error('一致する商品が複数あります。商品IDを指定してください');
+    const match = matches[0];
+    return match && available(match.item, match.choice.name, task.quantity) ? match : null;
+  }
+
   function makePanel() {
     const panel = document.createElement('details');
     panel.id = 'uzura-vallad';
@@ -153,10 +239,111 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
     document.body.append(panel);
   }
 
+  function showSchedule() {
+    const panel = makePanel();
+    panel.innerHTML = '<summary>うずら BOT · VALLAD</summary>' +
+      '<p><label>指定方法 <select data-by style="font-size:16px"><option value="code">商品コード</option><option value="name">商品名</option></select></label><br>' +
+      '<input data-code type="text" placeholder="商品ID・商品URL・型番" aria-label="商品コードまたは商品名" autocapitalize="off" style="width:95%;font-size:16px"></p>' +
+      '<p><label>サイズ <input data-size type="text" placeholder="例 M" style="width:5em;font-size:16px"></label> ' +
+      '<label>数量 <input data-qty type="number" min="1" max="20" value="1" style="width:4em;font-size:16px"></label></p>' +
+      '<p><label>発売日時（日本時間）<br><input data-at type="datetime-local" style="max-width:100%;font-size:16px"></label></p>' +
+      '<p><button type="button" data-arm>発売時刻に開始</button> <button type="button" data-now>すぐ実行</button> ' +
+      '<button type="button" data-stop disabled>停止</button></p><p data-status role="status"></p>' +
+      '<small>商品IDは商品URLの pid= に続く数字。商品名・型番は新着一覧の先頭12件と完全一致。サイズもショップ表記どおり入力。</small>';
+    const field = name => panel.querySelector('[data-' + name + ']');
+    const by = field('by'), code = field('code'), size = field('size'), qty = field('qty'), at = field('at');
+    const arm = field('arm'), now = field('now'), stop = field('stop');
+    const say = message => { field('status').textContent = message; };
+    let timer, controller;
+    function active(value) {
+      for (const input of [by, code, size, qty, at, arm, now]) input.disabled = value;
+      stop.disabled = !value;
+    }
+    function clear() {
+      clearTimeout(timer);
+      controller?.abort();
+      controller = null;
+      sessionStorage.removeItem(scheduleKey);
+      active(false);
+    }
+    async function run(task) {
+      const current = new AbortController();
+      controller = current;
+      try {
+        while (!current.signal.aborted && Date.now() < task.at + watchMs) {
+          say('指定商品とサイズの在庫を確認中…');
+          const match = await findScheduledItem(task, current.signal);
+          if (current.signal.aborted || Date.now() >= task.at + watchMs) break;
+          if (match) {
+            sessionStorage.setItem(intentKey, JSON.stringify({ pid: match.id, name: match.choice.name,
+              quantity: task.quantity, expires: task.at + watchMs, scheduled: task }));
+            sessionStorage.removeItem(scheduleKey);
+            say('対象商品が見つかりました。商品詳細へ移動します。');
+            location.assign(productUrl(match.id).href);
+            return;
+          }
+          await new Promise(resolve => setTimeout(resolve, pollMs));
+        }
+        if (!current.signal.aborted) {
+          clear();
+          say('2分で終了しました。対象の商品・在庫を確認できませんでした。');
+        }
+      } catch (error) {
+        if (!current.signal.aborted) {
+          clear();
+          say(error.message || '確認を停止しました');
+        }
+      }
+    }
+    function schedule(task) {
+      active(true);
+      if (Date.now() >= task.at) { run(task); return; }
+      say('開始待ち。発売時刻までこのタブを開いてください。');
+      timer = setTimeout(() => schedule(task), Math.min(task.at - Date.now(), 60000));
+    }
+    function start(immediate) {
+      try {
+        const when = immediate ? Date.now() : Date.parse(at.value + '+09:00');
+        if (!Number.isFinite(when) || (!immediate && when <= Date.now())) throw new Error('未来の発売日時を入力してください');
+        if (!validQuantity(qty.valueAsNumber)) throw new Error('数量は1〜20で入力してください');
+        const task = { ...parseTarget(code.value, by.value), by: by.value, code: code.value.trim(), size: normalize(size.value),
+          quantity: qty.valueAsNumber, at: when, inputTime: at.value };
+        sessionStorage.setItem(scheduleKey, JSON.stringify(task));
+        schedule(task);
+      } catch (error) { say(error.message || '開始できませんでした'); }
+    }
+    arm.onclick = () => start(false);
+    now.onclick = () => start(true);
+    stop.onclick = () => { clear(); say('停止しました'); };
+    by.onchange = () => { code.placeholder = by.value === 'name' ? '色名まで含めた正式な商品名' : '商品ID・商品URL・型番'; };
+    window.addEventListener('pagehide', () => { clearTimeout(timer); controller?.abort(); });
+    window.addEventListener('pageshow', event => { if (event.persisted) restore(); });
+    function restore() {
+      let task;
+      try { task = JSON.parse(sessionStorage.getItem(scheduleKey) || 'null'); } catch { return; }
+      if (!task) { active(false); return; }
+      panel.open = true;
+      by.value = task.by === 'name' ? 'name' : 'code';
+      by.onchange();
+      code.value = task.code;
+      size.value = task.size;
+      qty.value = String(task.quantity);
+      at.value = task.inputTime;
+      if (!Number.isFinite(task.at) || !validQuantity(task.quantity) || Date.now() >= task.at + watchMs) {
+        clear();
+        say('開始から2分が経過しました。');
+        return;
+      }
+      schedule(task);
+    }
+    document.body.append(panel);
+    restore();
+  }
+
   function boot() {
     if (document.getElementById('uzura-vallad')) return;
     if (pid === null) {
-      showGuide('商品をタップすると、商品詳細でサイズ・数量を指定できます。');
+      showSchedule();
       return;
     }
     let resume = null;
@@ -198,7 +385,7 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
     const select = () => {
       const selected = size.options[size.selectedIndex];
       const quantity = qty.valueAsNumber;
-      if (!selected || selected.disabled || !Number.isInteger(quantity) || quantity < 1 || quantity > 20) {
+      if (!selected || selected.disabled || !validQuantity(quantity)) {
         throw new Error('サイズを選び、数量を1〜20で入力してください');
       }
       return { name: selected.value, quantity };
@@ -265,11 +452,16 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
     window.addEventListener('pagehide', () => controller?.abort(), { once: true });
 
     if (resume?.pid === pid && resume.expires > Date.now() && typeof resume.name === 'string' &&
-        Number.isInteger(resume.quantity) && resume.quantity >= 1 && resume.quantity <= 20) {
+      validQuantity(resume.quantity)) {
       panel.open = true;
       size.value = resume.name;
       qty.value = String(resume.quantity);
-      try { submit(select()); } catch (error) { showError(error); }
+      try {
+        if (resume.scheduled && scheduledChoice(item, resume.scheduled)?.name !== resume.name) {
+          throw new Error('商品コードまたはサイズが変わったため停止しました');
+        }
+        submit(select());
+      } catch (error) { showError(error); }
     }
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });

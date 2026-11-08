@@ -15,7 +15,7 @@ Shopifyの追加登録: 96店舗。以下は公式サイトで商品ID・在庫�
 | WTAPS | https://wtaps.com | 商品取得確認・共通処理登録済み |
 | NEIGHBORHOOD | https://www.neighborhood.jp | 商品取得確認・共通処理登録済み |
 | BAPE | https://jp.bape.com | 商品取得確認・共通処理登録済み |
-| VALLAD | https://test.valladstudio.com/ | カラーミー専用。トップ・商品一覧にBOTを表示。商品詳細でサイズ・数量選択、在庫待ち、カート追加補助 |
+| VALLAD | https://test.valladstudio.com/ | カラーミー専用。商品コード・商品名、サイズ、数量、発売日時を事前入力。対象を照合してカート追加補助 |
 | UNION TOKYO | https://www.uniontokyo.jp | 商品取得確認・共通処理登録済み |
 | JJJJOUND | https://www.jjjjound.com | 商品取得確認・共通処理登録済み |
 | GDC | https://gdc.tokyo | 商品取得確認・共通処理登録済み |
