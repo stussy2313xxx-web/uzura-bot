@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         うずら BOT — Mellojoy・Shop対応
 // @namespace    uzura.mellojoy.shop
-// @version      2.1.44.10930
+// @version      2.1.44.10931
 // @updateURL    https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.meta.js
 // @downloadURL  https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.user.js
 // @description  Mellojoy・Shopify・Supreme・HUMAN MADE・Buffer・Palaceの購入補助。購入成功時のDiscord通知に対応。
@@ -1163,7 +1163,13 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
         return { products, partial: true };
       }
       if (this.mode === 'json') {
-        const r = await get(shopPath((UZURA_CURRENT?.collection ? 'collections/' + encodeURIComponent(UZURA_CURRENT.collection) + '/' : '') + 'products.json?limit=250&_=' + Date.now()), { headers: { Accept: 'application/json' } });
+        const activeCollection = HOST === 'jp.stussy.com' &&
+          /^\/collections\/([a-z0-9-]+)\/?$/i.exec(location.pathname)?.[1];
+        const collection = activeCollection || UZURA_CURRENT?.collection;
+        const path = 'products.json?limit=250&_=' + Date.now();
+        const options = { headers: { Accept: 'application/json' } };
+        let r = await get(shopPath(collection ? 'collections/' + encodeURIComponent(collection) + '/' + path : path), options);
+        if (activeCollection && r.status === 404) r = await get(shopPath(path), options);
         if (r.status === 403) throw new Blocked('商品一覧へのアクセスが拒否されました');
         if (r.status === 200) {
           let j; try { j = JSON.parse(r.text); } catch { throw new Error('商品一覧がJSONではありません'); }

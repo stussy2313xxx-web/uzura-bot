@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          うずら BOT Android — ショップ・購入通知
 // @namespace     uzura.bot.android.shops
-// @version       2.1.44.10930
+// @version       2.1.44.10931
 // @description   Android版。Shopify、Supreme、HUMAN MADE、Buffer、Palaceなどの購入補助とDiscord購入通知。
 // @match         https://*/*
 // @run-at        document-start
@@ -1140,7 +1140,13 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
         return { products, partial: true };
       }
       if (this.mode === 'json') {
-        const r = await get(shopPath((UZURA_CURRENT?.collection ? 'collections/' + encodeURIComponent(UZURA_CURRENT.collection) + '/' : '') + 'products.json?limit=250&_=' + Date.now()), { headers: { Accept: 'application/json' } });
+        const activeCollection = HOST === 'jp.stussy.com' &&
+          /^\/collections\/([a-z0-9-]+)\/?$/i.exec(location.pathname)?.[1];
+        const collection = activeCollection || UZURA_CURRENT?.collection;
+        const path = 'products.json?limit=250&_=' + Date.now();
+        const options = { headers: { Accept: 'application/json' } };
+        let r = await get(shopPath(collection ? 'collections/' + encodeURIComponent(collection) + '/' + path : path), options);
+        if (activeCollection && r.status === 404) r = await get(shopPath(path), options);
         if (r.status === 403) throw new Blocked('商品一覧へのアクセスが拒否されました');
         if (r.status === 200) {
           let j; try { j = JSON.parse(r.text); } catch { throw new Error('商品一覧がJSONではありません'); }
