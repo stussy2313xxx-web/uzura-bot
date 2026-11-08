@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          うずら BOT Android — ショップ・購入通知
 // @namespace     uzura.bot.android.shops
-// @version       2.1.44.10925
+// @version       2.1.44.10926
 // @description   Android版。Shopify、Supreme、HUMAN MADE、Buffer、Palaceなどの購入補助とDiscord購入通知。
 // @match         https://*/*
 // @run-at        document-start
@@ -94,7 +94,7 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
   const intentKey = 'uzura-vallad-cart-intent';
   const scheduleKey = 'uzura-vallad-schedule-v1';
   const watchMs = 120000;
-  const pollMs = 5000;
+  const pollMs = 300;
   const catalogUrl = new URL('/', url.origin);
   catalogUrl.searchParams.set('mode', 'srh');
   const productUrl = id => new URL('/?pid=' + id, url.origin);
@@ -165,12 +165,12 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
     return candidates.length === 1 ? candidates[0] : null;
   }
 
-  async function fetchPage(address, signal) {
+  async function fetchPage(address, signal, deadline) {
     const request = new AbortController();
     const abort = () => request.abort();
-    if (signal.aborted) throw new Error('停止しました');
+    if (signal.aborted || Date.now() >= deadline) throw new Error('確認を終了しました');
     signal.addEventListener('abort', abort, { once: true });
-    const timeout = setTimeout(abort, 8000);
+    const timeout = setTimeout(abort, Math.min(8000, deadline - Date.now()));
     try {
       const response = await fetch(address.href, { cache: 'no-store', credentials: 'same-origin', signal: request.signal });
       if (response.status === 404) return null;
@@ -198,24 +198,29 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
   }
 
   async function findScheduledItem(task, signal) {
+    const deadline = task.at + watchMs;
     const newest = new URL(catalogUrl);
     newest.searchParams.set('sort', 'n');
-    const ids = task.id ? [task.id] : catalogIds(await fetchPage(newest, signal), task.name);
+    const ids = task.id ? [task.id] : catalogIds(await fetchPage(newest, signal, deadline), task.name);
     if (task.name && ids.length > 1) throw new Error('一致する商品が複数あります。商品IDを指定してください');
     const matches = [];
     for (const [index, id] of ids.entries()) {
-      if (index) await new Promise(resolve => setTimeout(resolve, 1000));
-      if (signal.aborted || Date.now() >= task.at + watchMs) return null;
-      const doc = await fetchPage(productUrl(id), signal);
+      if (index) await new Promise(resolve => setTimeout(resolve, pollMs));
+      if (signal.aborted || Date.now() >= deadline) return null;
+      const doc = await fetchPage(productUrl(id), signal, deadline);
       if (!doc?.querySelector('form[name="product_form"]')) continue;
       const item = readProduct(doc, id);
       const choice = scheduledChoice(item, task);
       if (choice) matches.push({ id, item, choice });
-      else if (task.id) throw new Error('指定サイズがありません。サイズ展開の有無とショップ表記を確認してください');
+      else if (task.id || (task.name && normalize(item.product.name) === task.name)) {
+        throw new Error(item.sizes.every(size => !size.name)
+          ? 'この商品はサイズ指定なしです。サイズ欄を空にして実行してください'
+          : '指定サイズがありません。ショップ表記どおりのサイズを入力してください');
+      }
     }
     if (matches.length > 1) throw new Error('一致する商品が複数あります。商品IDを指定してください');
     const match = matches[0];
-    return match && available(match.item, match.choice.name, task.quantity) ? match : null;
+    return match ? { ...match, ready: available(match.item, match.choice.name, task.quantity) } : null;
   }
 
   function makePanel() {
@@ -225,6 +230,38 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
     return panel;
   }
 
+  function mountPanel(panel) {
+    const style = document.createElement('style');
+    style.textContent = `
+      #uzura-vallad :is(input, select, button) {
+        color: #10213b !important;
+        -webkit-text-fill-color: #10213b !important;
+        background: #fff !important;
+        border: 1px solid #9aafc9 !important;
+        border-radius: 8px !important;
+        font-size: 16px !important;
+        color-scheme: light;
+        min-height: 36px;
+        padding: 4px 8px;
+        box-sizing: border-box;
+      }
+      #uzura-vallad input::placeholder {
+        color: #56677d !important;
+        -webkit-text-fill-color: #56677d !important;
+        opacity: 1 !important;
+      }
+      #uzura-vallad :is(input, select, button):disabled {
+        color: #3f4d60 !important;
+        -webkit-text-fill-color: #3f4d60 !important;
+        background: #e4ebf4 !important;
+        opacity: 1 !important;
+      }
+      #uzura-vallad button:not(:disabled) { cursor: pointer; }
+    `;
+    panel.append(style);
+    document.body.append(panel);
+  }
+
   function showGuide(message) {
     const panel = makePanel();
     panel.innerHTML = '<summary>うずら BOT · VALLAD</summary><p data-status role="status"></p><a data-catalog style="color:#fff">商品一覧を開く</a>';
@@ -232,7 +269,7 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
     const link = panel.querySelector('[data-catalog]');
     link.href = catalogUrl.href;
     link.hidden = mode === 'srh' && pid === null;
-    document.body.append(panel);
+    mountPanel(panel);
   }
 
   function showSchedule() {
@@ -245,9 +282,10 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
       '<p><label>発売日時（日本時間）<br><input data-at type="datetime-local" style="max-width:100%;font-size:16px"></label></p>' +
       '<p><button type="button" data-arm>発売時刻に開始</button> <button type="button" data-now>すぐ実行</button> ' +
       '<button type="button" data-stop disabled>停止</button></p><p data-status role="status"></p>' +
-      '<small>商品IDは商品URLの pid= に続く数字。商品名・型番は新着一覧の先頭12件と完全一致。サイズもショップ表記どおり入力。</small>';
+      '<small>商品IDは商品URLの pid= に続く数字。商品名・型番は新着一覧の先頭12件と完全一致。サイズ展開がない商品はサイズ欄を空欄にします。</small>';
     const field = name => panel.querySelector('[data-' + name + ']');
     const by = field('by'), code = field('code'), size = field('size'), qty = field('qty'), at = field('at');
+    at.value = new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10) + 'T20:00';
     const arm = field('arm'), now = field('now'), stop = field('stop');
     const say = message => { field('status').textContent = message; };
     let timer, controller;
@@ -265,12 +303,18 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
     async function run(task) {
       const current = new AbortController();
       controller = current;
+      let foundName;
+      say('指定商品とサイズの在庫を確認中…');
+      function expire() {
+        clear();
+        say(foundName ? foundName + '：商品は見つかりましたが、指定数量をカートに入れられず2分で終了しました。'
+          : '2分で終了しました。指定した商品が見つかりませんでした。商品名・商品IDを確認してください。');
+      }
       try {
         while (!current.signal.aborted && Date.now() < task.at + watchMs) {
-          say('指定商品とサイズの在庫を確認中…');
           const match = await findScheduledItem(task, current.signal);
           if (current.signal.aborted || Date.now() >= task.at + watchMs) break;
-          if (match) {
+          if (match?.ready) {
             sessionStorage.setItem(intentKey, JSON.stringify({ pid: match.id, name: match.choice.name,
               quantity: task.quantity, expires: task.at + watchMs, scheduled: task }));
             sessionStorage.removeItem(scheduleKey);
@@ -278,14 +322,14 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
             location.assign(productUrl(match.id).href);
             return;
           }
+          if (match) foundName = match.item.product.name;
+          if (foundName) say(foundName + '：指定数量をカートに入れられる状態を待っています。');
           await new Promise(resolve => setTimeout(resolve, pollMs));
         }
-        if (!current.signal.aborted) {
-          clear();
-          say('2分で終了しました。対象の商品・在庫を確認できませんでした。');
-        }
+        if (!current.signal.aborted) expire();
       } catch (error) {
         if (!current.signal.aborted) {
+          if (Date.now() >= task.at + watchMs) { expire(); return; }
           clear();
           say(error.message || '確認を停止しました');
         }
@@ -332,7 +376,7 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
       }
       schedule(task);
     }
-    document.body.append(panel);
+    mountPanel(panel);
     restore();
   }
 
@@ -372,7 +416,7 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
       prompt.selected = true;
       size.prepend(prompt);
     }
-    document.body.append(panel);
+    mountPanel(panel);
 
     let submitted = false;
     let controller = null;
