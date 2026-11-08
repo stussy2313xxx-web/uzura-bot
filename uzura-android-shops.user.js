@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          うずら BOT Android — ショップ・購入通知
 // @namespace     uzura.bot.android.shops
-// @version       2.1.44.10931
+// @version       2.1.44.10932
 // @description   Android版。Shopify、Supreme、HUMAN MADE、Buffer、Palaceなどの購入補助とDiscord購入通知。
 // @match         https://*/*
 // @run-at        document-start
@@ -713,6 +713,7 @@ window.__synovashop = true;
 const SYNOVA_WEBHOOK = ''; // Author's fixed notification destination disabled.
 const SYNOVA_LOGO_B64 = '';
 const SYNOVA_NAME = 'うずら BOT';
+const UZURA_RELEASE = '2.1.44.10932';
 const SYNOVA_VERSION = '1.9.8';
 const SYNOVA_ICON = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MCIgaGVpZ2h0PSI4MCIgdmlld0JveD0iMCAwIDgwIDgwIj48Y2lyY2xlIGN4PSI0MCIgY3k9IjQwIiByPSIzNiIgZmlsbD0iI2ZmZmZmZiIvPjx0ZXh0IHg9IjQwIiB5PSI1NSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1mYW1pbHk9IkFyaWFsLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iNDYiIGZvbnQtd2VpZ2h0PSJib2xkIiBmaWxsPSIjMTAyMTNiIj5VPC90ZXh0Pjwvc3ZnPg==";
 const SYNOVA_TITLE = '';
@@ -1125,12 +1126,19 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
         }),
       };
     },
+    stussyScope() {
+      if (HOST !== 'jp.stussy.com') return {};
+      const product = /^(?:\/collections\/[a-z0-9-]+)?\/products\/([a-z0-9-]+)\/?$/i.exec(location.pathname);
+      const collection = /^\/collections\/([a-z0-9-]+)\/?$/i.exec(location.pathname);
+      return { handle: product?.[1], collection: collection?.[1] };
+    },
     async list() {
       await this.ensureReady();
       this.round++;
-      if (this.focus.length && this.round % 3) {
+      const { handle: currentProduct, collection: activeCollection } = this.stussyScope();
+      if (currentProduct || (this.focus.length && this.round % 3)) {
         const products = [];
-        for (const handle of this.focus.slice(0, 4)) {
+        for (const handle of currentProduct ? [currentProduct] : this.focus.slice(0, 4)) {
           const r = await get(shopPath('products/' + encodeURIComponent(handle) + '.js'), { headers: { Accept: 'application/json' } });
           if (r.status === 403) throw new Blocked('商品情報へのアクセスが拒否されました');
           if (r.status === 404) continue;
@@ -1140,8 +1148,6 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
         return { products, partial: true };
       }
       if (this.mode === 'json') {
-        const activeCollection = HOST === 'jp.stussy.com' &&
-          /^\/collections\/([a-z0-9-]+)\/?$/i.exec(location.pathname)?.[1];
         const collection = activeCollection || UZURA_CURRENT?.collection;
         const path = 'products.json?limit=250&_=' + Date.now();
         const options = { headers: { Accept: 'application/json' } };
@@ -1645,6 +1651,12 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
       if (g) { cfg.grid = g.getAttribute('data-url'); save(K_CFG, cfg); }
       log(L('\u76e3\u8996\u30da\u30fc\u30b8: ', 'Trang qu\u00e9t: ') + decodeURIComponent((cfg.grid || 'cgid=all').replace(/^.*Search-UpdateGrid\??/, '')));
     }
+    if (HOST === 'jp.stussy.com') {
+      const { handle, collection } = gen.stussyScope();
+      const source = handle ? '/products/' + handle + '.js'
+        : collection ? '/collections/' + collection + '/products.json' : '/products.json';
+      log(`[STÜSSY v${UZURA_RELEASE}] 検索先 ${source}`);
+    }
     st.active = true; st.now = !!now; st.boughtAt = 0; st.reloads = []; save(K_ST, st); keepAwake();
     if (IS_GEN) {
       shop.clearAll().then(n => {
@@ -1789,7 +1801,7 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
 #sxbbox button,#sxbbox input,#sxbbox select{font-family:-apple-system,"Hiragino Sans",sans-serif}
 #sxblog{display:block;max-height:220px;overflow:auto;white-space:pre-wrap;font:11px ui-monospace,monospace;background:#10213b;color:#cfdeef;border:1px solid #385573;border-radius:8px;padding:6px;margin-top:6px}
 </style>
-<div class="hd">${ICON_TAG}<b class="ttl">${TITLE_TAG}<span class="ver">${SHOP} \u00b7 v${SYNOVA_VERSION}</span></b><button id="sxbpos">${L('\u4e0a\u4e0b', 'L\u00ean/Xu\u1ed1ng')}</button><button id="sxbhide">${L('\u96a0\u3059', '\u1ea8n')}</button></div>
+<div class="hd">${ICON_TAG}<b class="ttl">${TITLE_TAG}<span class="ver">${SHOP} \u00b7 v${HOST === "jp.stussy.com" ? UZURA_RELEASE : SYNOVA_VERSION}</span></b><button id="sxbpos">${L('\u4e0a\u4e0b', 'L\u00ean/Xu\u1ed1ng')}</button><button id="sxbhide">${L('\u96a0\u3059', '\u1ea8n')}</button></div>
 <div class="st" id="sxbst">${st.active ? L('\u5f85\u6a5f\u4e2d', '\u0110ang ch\u1edd') : L('\u505c\u6b62\u4e2d', '\u0110ang t\u1eaft')}</div>
 <div class="body">
   <div class="desc">${DESC}</div>${UZURA_CURRENT ? `<div class="desc">対応店舗: ${SHOP} ／ 商品取得形式を確認済み・実購入は未検証</div>` : ''}
