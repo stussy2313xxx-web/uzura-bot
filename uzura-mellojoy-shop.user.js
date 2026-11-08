@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         うずら BOT — Mellojoy・Shop対応
 // @namespace    uzura.mellojoy.shop
-// @version      2.1.44.10927
+// @version      2.1.44.10928
 // @updateURL    https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.meta.js
 // @downloadURL  https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.user.js
 // @description  Mellojoy・Shopify・Supreme・HUMAN MADE・Buffer・Palaceの購入補助。購入成功時のDiscord通知に対応。
@@ -83,6 +83,132 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
 })();
 
 
+
+(function uzuraValladCheckout() {
+  'use strict';
+
+  if (location.origin !== 'https://test.valladstudio.com' || window.top !== window ||
+      !(location.pathname === '/' || location.pathname.startsWith('/cart/'))) return;
+
+  const key = 'uzura-vallad-checkout-profile-v1';
+  const fields = [
+    ['name', '氏名', 'text', 'input[name="customerAddressName"]'],
+    ['kana', 'フリガナ', 'text', 'input[name="customerAddressFurigana"][type="text"]'],
+    ['postal', '郵便番号', 'text', 'input[name="customerAddressPostalCode"]'],
+    ['prefecture', '都道府県', 'text', 'select[name="customerAddressPrefecture"]'],
+    ['address1', '市区町村・番地', 'text', 'input[name="customerAddressAddress1"]'],
+    ['address2', '建物名・部屋番号', 'text', 'input[name="customerAddressAddress2"]'],
+    ['phone', '電話番号', 'tel', 'input[name="customerAddressPhoneNumber"], input[name="customerAddressTelMobile"]'],
+    ['email', 'メールアドレス', 'email', 'cms-email-field input[ng-model="$ctrl.email"]'],
+  ];
+  const addressSelector = 'cms-address[name="customerAddress"]';
+  const visible = field => field.getClientRects().length && getComputedStyle(field).visibility === 'visible';
+  const usable = field => visible(field) && !field.matches(':disabled, [readonly]');
+  const normalize = text => String(text ?? '').normalize('NFKC').trim();
+
+  async function start() {
+    const panel = document.createElement('details');
+    panel.id = 'uzura-vallad-checkout';
+    panel.style.cssText = 'position:fixed;left:10px;bottom:calc(18px + env(safe-area-inset-bottom));z-index:2147483646;background:#10213b;color:#fff;border-radius:12px;padding:10px;font:16px system-ui;max-width:calc(100vw - 44px);max-height:65vh;overflow:auto';
+    panel.innerHTML = '<summary>VALLAD お届け先設定</summary><form autocomplete="off"></form><p role="status"></p>';
+    const form = panel.querySelector('form');
+    const status = panel.querySelector('[role="status"]');
+    const inputs = new Map();
+    for (const [key, label, type] of fields) {
+      const row = document.createElement('label');
+      row.style.cssText = 'display:block;margin:6px 0';
+      const input = document.createElement('input');
+      input.type = type;
+      input.style.cssText = 'display:block;width:100%;box-sizing:border-box;background:#fff;color:#10213b;-webkit-text-fill-color:#10213b;font-size:16px';
+      input.maxLength = key === 'email' ? 255 : 80;
+      if (key === 'postal') input.inputMode = 'numeric';
+      if (key === 'prefecture') input.placeholder = '例 東京都';
+      row.append(label, input);
+      form.append(row);
+      inputs.set(key, input);
+    }
+    const note = document.createElement('small');
+    note.textContent = '保存後はカートの空欄に自動入力。カード欄はSafariの自動入力を使えます。';
+    const save = document.createElement('button');
+    save.type = 'submit';
+    save.textContent = '保存';
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.textContent = '保存内容を消去';
+    for (const button of [save, remove]) {
+      button.style.cssText = 'margin:5px;color:#10213b;background:#fff;-webkit-text-fill-color:#10213b';
+    }
+    form.append(note, document.createElement('br'), save, remove);
+
+    let profile = await GM.getValue(key, null);
+    for (const [name, input] of inputs) input.value = profile?.[name] || '';
+    let applied = new WeakSet();
+
+    function fill() {
+      if (!profile || !location.pathname.startsWith('/cart/')) return;
+      const addresses = [...document.querySelectorAll(addressSelector)].filter(visible);
+      if (addresses.length !== 1) return;
+      const address = addresses[0];
+      if (address.querySelector('input[name="customerAddressOverseasDelivery"]:checked')) return;
+      let count = 0;
+      for (const [name, , , selector] of fields) {
+        const scope = name === 'email' ? address.parentElement : address;
+        const targets = [...scope.querySelectorAll(selector)].filter(usable);
+        if (targets.length !== 1) continue;
+        const field = targets[0];
+        if (!profile[name] || field.value || applied.has(field)) continue;
+        let value = profile[name];
+        if (field.tagName === 'SELECT') {
+          const option = [...field.options].find(option => !option.disabled && option.value &&
+            normalize(option.textContent) === normalize(value));
+          if (!option) continue;
+          value = option.value;
+        }
+        applied.add(field);
+        field.value = value;
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+        field.dispatchEvent(new Event('change', { bubbles: true }));
+        count++;
+      }
+      if (count) status.textContent = 'お届け先を自動入力しました。内容と空欄をご確認ください。';
+    }
+
+    form.onsubmit = async event => {
+      event.preventDefault();
+      const next = Object.fromEntries([...inputs].map(([name, input]) => [name, input.value.trim()]));
+      next.postal = normalize(next.postal).replace(/[\s-]/g, '');
+      if (next.postal && !/^\d{7}$/.test(next.postal)) {
+        status.textContent = '郵便番号は7桁で入力してください。';
+        return;
+      }
+      try {
+        await GM.setValue(key, next);
+        profile = next;
+        applied = new WeakSet();
+        status.textContent = 'お届け先を保存しました。';
+        fill();
+      } catch { status.textContent = '保存できませんでした。'; }
+    };
+    remove.onclick = async () => {
+      try {
+        await GM.setValue(key, null);
+        profile = null;
+        for (const input of inputs.values()) input.value = '';
+        status.textContent = '保存したお届け先を消去しました。';
+      } catch { status.textContent = '消去できませんでした。'; }
+    };
+    document.body.append(panel);
+    if (location.pathname.startsWith('/cart/')) {
+      const observer = new MutationObserver(fill);
+      observer.observe(document.body, { childList: true, subtree: true });
+      fill();
+    }
+  }
+
+  const mount = () => start().catch(error => console.warn('VALLAD お届け先設定:', error.message));
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount, { once: true });
+  else mount();
+})();
 
 (function uzuraVallad() {
   'use strict';
