@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          うずら BOT Android — ショップ・購入通知
 // @namespace     uzura.bot.android.shops
-// @version       2.1.44.10926
+// @version       2.1.44.10927
 // @description   Android版。Shopify、Supreme、HUMAN MADE、Buffer、Palaceなどの購入補助とDiscord購入通知。
 // @match         https://*/*
 // @run-at        document-start
@@ -128,7 +128,7 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
       option: sizeField && Array.from(sizeField.options).find(option => option.text.trim() === variant.option1_value),
     })) : [{ name: '', stock: product.stock_num }];
     return { product, sizes, sizeField, qtyField: form.querySelector('input[name="product_num"]'),
-      button: form.querySelector('button[type="submit"].btn-addcart') };
+      button: form.querySelector('button[type="submit"].btn-addcart, button[type="submit"].button--addcart') };
   }
 
   function available(item, size, quantity) {
@@ -189,8 +189,9 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
   }
 
   function catalogIds(doc, name) {
-    return [...new Set(Array.from(doc?.querySelectorAll('.prd-lst-name a[href]') || []).slice(0, 12).map(link => {
-      if (name && normalize(link.textContent) !== name) return null;
+    return [...new Set(Array.from(doc?.querySelectorAll('.prd-lst-name a[href], a.box__inner[href]') || []).slice(0, 12).map(link => {
+      const title = link.querySelector('.box__name')?.textContent ?? link.textContent;
+      if (name && normalize(title) !== name) return null;
       const address = new URL(link.getAttribute('href'), catalogUrl);
       const id = address.searchParams.get('pid');
       return address.origin === url.origin && address.pathname === '/' && /^\d+$/.test(id || '') ? id : null;

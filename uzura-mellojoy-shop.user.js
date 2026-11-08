@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         うずら BOT — Mellojoy・Shop対応
 // @namespace    uzura.mellojoy.shop
-// @version      2.1.44.10926
+// @version      2.1.44.10927
 // @updateURL    https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.meta.js
 // @downloadURL  https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.user.js
 // @description  Mellojoy・Shopify・Supreme・HUMAN MADE・Buffer・Palaceの購入補助。購入成功時のDiscord通知に対応。
@@ -132,7 +132,7 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
       option: sizeField && Array.from(sizeField.options).find(option => option.text.trim() === variant.option1_value),
     })) : [{ name: '', stock: product.stock_num }];
     return { product, sizes, sizeField, qtyField: form.querySelector('input[name="product_num"]'),
-      button: form.querySelector('button[type="submit"].btn-addcart') };
+      button: form.querySelector('button[type="submit"].btn-addcart, button[type="submit"].button--addcart') };
   }
 
   function available(item, size, quantity) {
@@ -193,8 +193,9 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
   }
 
   function catalogIds(doc, name) {
-    return [...new Set(Array.from(doc?.querySelectorAll('.prd-lst-name a[href]') || []).slice(0, 12).map(link => {
-      if (name && normalize(link.textContent) !== name) return null;
+    return [...new Set(Array.from(doc?.querySelectorAll('.prd-lst-name a[href], a.box__inner[href]') || []).slice(0, 12).map(link => {
+      const title = link.querySelector('.box__name')?.textContent ?? link.textContent;
+      if (name && normalize(title) !== name) return null;
       const address = new URL(link.getAttribute('href'), catalogUrl);
       const id = address.searchParams.get('pid');
       return address.origin === url.origin && address.pathname === '/' && /^\d+$/.test(id || '') ? id : null;
