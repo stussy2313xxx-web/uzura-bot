@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         うずら BOT — Mellojoy・Shop対応
 // @namespace    uzura.mellojoy.shop
-// @version      2.1.44.10933
+// @version      2.1.44.10934
 // @updateURL    https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.meta.js
 // @downloadURL  https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.user.js
 // @description  Mellojoy・Shopify・Supreme・HUMAN MADE・Buffer・Palaceの購入補助。購入成功時のDiscord通知に対応。
@@ -736,7 +736,7 @@ window.__synovashop = true;
 const SYNOVA_WEBHOOK = ''; // Author's fixed notification destination disabled.
 const SYNOVA_LOGO_B64 = '';
 const SYNOVA_NAME = 'うずら BOT';
-const UZURA_RELEASE = '2.1.44.10933';
+const UZURA_RELEASE = '2.1.44.10934';
 const SYNOVA_VERSION = '1.9.8';
 const SYNOVA_ICON = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MCIgaGVpZ2h0PSI4MCIgdmlld0JveD0iMCAwIDgwIDgwIj48Y2lyY2xlIGN4PSI0MCIgY3k9IjQwIiByPSIzNiIgZmlsbD0iI2ZmZmZmZiIvPjx0ZXh0IHg9IjQwIiB5PSI1NSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1mYW1pbHk9IkFyaWFsLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iNDYiIGZvbnQtd2VpZ2h0PSJib2xkIiBmaWxsPSIjMTAyMTNiIj5VPC90ZXh0Pjwvc3ZnPg==";
 const SYNOVA_TITLE = '';
@@ -1151,6 +1151,7 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
     },
     stussyScope() {
       if (HOST !== 'jp.stussy.com') return {};
+      if (location.pathname === '/') return { collection: 'new-arrivals' };
       const product = /^(?:\/collections\/[a-z0-9-]+)?\/products\/([a-z0-9-]+)\/?$/i.exec(location.pathname);
       const collection = /^\/collections\/([a-z0-9-]+)\/?$/i.exec(location.pathname);
       return { handle: product?.[1], collection: collection?.[1] };
@@ -1159,7 +1160,8 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
       await this.ensureReady();
       this.round++;
       const { handle: currentProduct, collection: activeCollection } = this.stussyScope();
-      if (currentProduct || (this.focus.length && this.round % 3)) {
+      const newArrivalsOnly = activeCollection === 'new-arrivals';
+      if (currentProduct || (!newArrivalsOnly && this.focus.length && this.round % 3)) {
         const products = [];
         for (const handle of currentProduct ? [currentProduct] : this.focus.slice(0, 4)) {
           const r = await get(shopPath('products/' + encodeURIComponent(handle) + '.js'), { headers: { Accept: 'application/json' } });
@@ -1175,40 +1177,13 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
         const path = 'products.json?limit=250&_=' + Date.now();
         const options = { headers: { Accept: 'application/json' } };
         let r = await get(shopPath(collection ? 'collections/' + encodeURIComponent(collection) + '/' + path : path), options);
+        if (newArrivalsOnly && r.status === 404) throw new Error('NEW ARRIVALSの商品一覧を取得できません（HTTP 404）');
         if (activeCollection && r.status === 404) r = await get(shopPath(path), options);
         if (r.status === 403) throw new Blocked('商品一覧へのアクセスが拒否されました');
         if (r.status === 200) {
           let j; try { j = JSON.parse(r.text); } catch { throw new Error('商品一覧がJSONではありません'); }
           if (!Array.isArray(j.products)) throw new Error('商品一覧の形式が未対応です');
-          const products = j.products.map(p => this.conv(p, false));
-          if (HOST === 'jp.stussy.com' && location.pathname === '/' && j.products.length === 250) {
-            const matches = (p, it) => {
-              if (!match(p.text, it.kw)) return false;
-              const colors = wantColors(it.color);
-              const sizes = wantSizes(it.size);
-              return p.variants.some(v =>
-                (!colors.length || colors.some(color => colorOk(v.color || p.text, color))) &&
-                (!sizes || sizes.some(size => sizeOk(v.size, size))));
-            };
-            const missing = cfg.items.slice(0, cfg.kwCount).filter(it =>
-              it.kw.trim() && !/^[\d&,\s]+$/.test(it.kw) && !products.some(p => matches(p, it)));
-            if (missing.length) {
-              const second = await get(shopPath(path + '&page=2'), options);
-              if (second.status === 403) throw new Blocked('商品一覧へのアクセスが拒否されました');
-              if (second.status !== 200 && second.status !== 404) throw new Error('商品一覧2ページ目 HTTP ' + second.status);
-              if (second.status === 200) {
-                const page = JSON.parse(second.text).products;
-                if (!Array.isArray(page)) throw new Error('商品一覧2ページ目の形式が未対応です');
-                const seen = new Set(products.map(p => p.key));
-                for (const item of page) {
-                  if (seen.has(item.handle)) continue;
-                  const p = this.conv(item, false);
-                  if (missing.some(it => matches(p, it))) products.push(p);
-                }
-              }
-            }
-          }
-          return { products, partial: false };
+          return { products: j.products.map(p => this.conv(p, false)), partial: false };
         }
         if (r.status !== 404) throw new Error('商品一覧 HTTP ' + r.status);
         this.mode = 'html';
@@ -1705,8 +1680,7 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
     if (HOST === 'jp.stussy.com') {
       const { handle, collection } = gen.stussyScope();
       const source = handle ? '/products/' + handle + '.js'
-        : collection ? '/collections/' + collection + '/products.json'
-        : location.pathname === '/' ? '/products.json（未一致の商品名は2ページ目も確認）' : '/products.json';
+        : collection ? '/collections/' + collection + '/products.json' : '/products.json';
       log(`[STÜSSY v${UZURA_RELEASE}] 検索先 ${source}`);
     }
     st.active = true; st.now = !!now; st.boughtAt = 0; st.reloads = []; save(K_ST, st); keepAwake();
