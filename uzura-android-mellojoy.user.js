@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          うずら BOT Android — メロジョイ
 // @namespace     uzura.bot.android.mellojoy
-// @version       2.1.44.10920
+// @version       2.1.44.10938
 // @description   Android版。メロジョイの購入・入店抽選。
 // @match         https://*.mellojoylucky.cn/*
 // @match         https://*.mellojoyjapan.com/*
@@ -1071,6 +1071,10 @@ if (!SYNOVA_DUP && /mellojoy(japan|us)\.com$/.test(location.hostname)) {
   // sau 12:00:12 l\u1ea1i nh\u1ecbp th\u01b0\u1eddng. 0,1s \u0111\u00e3 th\u1eed: b\u1ecb Shopify ch\u1eb7n c\u1ea3 IP h\u00e0ng ch\u1ee5c ph\u00fat (24/10).
   // c\u1ee9 DENSE_MS g\u1eedi 1 l\u01b0\u1ee3t, kh\u00f4ng ch\u1edd l\u01b0\u1ee3t tr\u01b0\u1edbc (t\u1ed1i \u0111a MAX_INFLIGHT l\u01b0\u1ee3t c\u00f9ng l\u00fac); l\u01b0\u1ee3t n\u00e0o th\u1ea5y h\u00e0ng tr\u01b0\u1edbc th\u00ec th\u00eam gi\u1ecf.
   const DENSE_MS = 300, DENSE_FROM_MS = 7000, DENSE_FOR_MS = 12000, MAX_INFLIGHT = 4;   // t\u1ed1c \u0111\u1ed9 cao 12:00:07 \u2192 12:00:12
+  const monitorDelay = (value, minimum) => {
+    const ms = Number(value);
+    return Number.isFinite(ms) && ms > 0 ? Math.min(30000, Math.max(minimum, Math.round(ms))) : 0;
+  };
   // 429: ngh\u1ec9 ng\u1eafn r\u1ed3i t\u0103ng d\u1ea7n 0,3 \u2192 0,6 \u2192 1,2 \u2192 t\u1ed1i \u0111a 2 gi\u00e2y; g\u1eedi \u0111\u01b0\u1ee3c l\u1ea1i th\u00ec v\u1ec1 0. C\u00f3 Retry-After th\u00ec theo (\u2264 2s)
   const BACKOFF_MIN = 300, BACKOFF_MAX = 2000;
   const GIVE_UP_MIN = 10;               // qu\u00e1 gi\u1edd m\u1edf 10 ph\u00fat kh\u00f4ng th\u1ea5y h\u00e0ng th\u00ec d\u1eebng
@@ -1786,7 +1790,7 @@ if (!SYNOVA_DUP && /mellojoy(japan|us)\.com$/.test(location.hostname)) {
       const ST = { in: L('\u5728\u5eab\u3042\u308a\u2705', 'c\u00f2n h\u00e0ng \u2705'), out: L('\u58f2\u308a\u5207\u308c', 'h\u1ebft h\u00e0ng'), none: L('\u672a\u63b2\u8f09', 'ch\u01b0a l\u00ean k\u1ec7') };
       if (d.err && !d.ok) log(L('\u30cd\u30c3\u30c8\u30ef\u30fc\u30af\u30a8\u30e9\u30fc', 'l\u1ed7i m\u1ea1ng'));
       const wait = Date.now() - lastOkAt;
-      if (wait > 2500) log(L(`\u23f3 \u30b7\u30e7\u30c3\u30d7\u5fdc\u7b54\u306a\u3057 ${Math.round(wait / 1000)}\u79d2\uff08\u518d\u9001\u4e2d\uff09`, `\u23f3 Shop ch\u01b0a tr\u1ea3 l\u1eddi ${Math.round(wait / 1000)} gi\u00e2y (\u0111ang g\u1eedi l\u1ea1i)`));
+      if (wait > 2500 + (cfg.monitorDelay || 0)) log(L(`\u23f3 \u30b7\u30e7\u30c3\u30d7\u5fdc\u7b54\u306a\u3057 ${Math.round(wait / 1000)}\u79d2\uff08\u518d\u9001\u4e2d\uff09`, `\u23f3 Shop ch\u01b0a tr\u1ea3 l\u1eddi ${Math.round(wait / 1000)} gi\u00e2y (\u0111ang g\u1eedi l\u1ea1i)`));
       else for (const k of [...kwStat].reverse()) log(`[${k.label}] ${k.kw} \u00b7 ${ST[k.st]}`);
       if (adding) log(L('\u5728\u5eab\u3042\u308a \u2192 \u30ab\u30fc\u30c8\u306b\u8ffd\u52a0\u4e2d\u2026', 'C\u00f3 h\u00e0ng \u2192 \u0111ang th\u00eam v\u00e0o gi\u1ecf\u2026'));
     }, 1000);
@@ -1818,15 +1822,15 @@ if (!SYNOVA_DUP && /mellojoy(japan|us)\.com$/.test(location.hostname)) {
       if (dense) {
         if (!denseShown) { denseShown = true; log(L('\u9ad8\u901f\u30b9\u30ad\u30e3\u30f3\u958b\u59cb', 'B\u1eaft \u0111\u1ea7u qu\u00e9t t\u1ed1c \u0111\u1ed9 cao')); }
         if (inflight < MAX_INFLIGHT) scan();      // kh\u00f4ng await: c\u00e1c l\u01b0\u1ee3t ch\u1ed3ng l\u00ean nhau
-        await sleep(denseMs);
+        await sleep(Math.max(denseMs, cfg.monitorDelay || 0));
       } else if (IS_US) {
         // US canh li\u00ean t\u1ee5c: g\u1eedi theo nh\u1ecbp, KH\u00d4NG ch\u1edd l\u01b0\u1ee3t tr\u01b0\u1edbc tr\u1ea3 l\u1eddi (t\u1ed1i \u0111a 2 l\u01b0\u1ee3t c\u00f9ng l\u00fac)
         // -> 1 request b\u1ecb shop gi\u1eef l\u00e2u kh\u00f4ng l\u00e0m BOT \u0111\u1ee9ng im (log 2/11: c\u00f2n h\u00e0ng m\u00e0 kh\u00f4ng th\u00eam gi\u1ecf m\u1ea5y ph\u00fat)
         if (inflight < 2) scan();
-        await sleep((Date.now() < usBurstUntil ? US_BURST_MS : US_POLL_MS) + Math.random() * 60);
+        await sleep(Math.max(Date.now() < usBurstUntil ? US_BURST_MS : US_POLL_MS, cfg.monitorDelay || 0) + Math.random() * 60);
       } else {
         await scan();
-        await sleep(Math.max(0, POLL_MS + Math.random() * 60 - (Date.now() - t0)));
+        await sleep(Math.max(0, Math.max(POLL_MS, cfg.monitorDelay || 0) + Math.random() * 60 - (Date.now() - t0)));
       }
     }
   }
@@ -1875,6 +1879,9 @@ if (!SYNOVA_DUP && /mellojoy(japan|us)\.com$/.test(location.hostname)) {
     cfg.backup.kw = document.getElementById('pjckb').value.trim();
     cfg.backup.qty = +document.getElementById('pjcqb').value;
     cfg.open = document.getElementById('pjcopen').value;
+    const delay = document.getElementById('pjcmonitor');
+    cfg.monitorDelay = monitorDelay(delay.value, POLL_MS);
+    delay.value = cfg.monitorDelay || '';
     save(K_CFG, cfg);
   }
 
@@ -1927,6 +1934,7 @@ if (!SYNOVA_DUP && /mellojoy(japan|us)\.com$/.test(location.hostname)) {
         'Mellojoy US : b\u00e1n gi\u1edd kh\u00f4ng c\u1ed1 \u0111\u1ecbnh (theo LIVE TikTok, t\u1eeb 7:30 s\u00e1ng gi\u1edd Nh\u1eadt). Login shop ho\u1eb7c Shop Pay tr\u01b0\u1edbc tr\u00ean Safari (\u0111\u00e3 l\u01b0u \u0111\u1ecba ch\u1ec9 + th\u1ebb) \u2192 nh\u1eadp Variant ID (nhanh nh\u1ea5t) ho\u1eb7c t\u1eeb kh\u00f3a + s\u1ed1 l\u01b0\u1ee3ng \u2192 b\u1ea5m "B\u1eadt canh h\u00e0ng li\u00ean t\u1ee5c". C\u00f3 h\u00e0ng BOT m\u1edf trang thanh to\u00e1n v\u00e0 t\u1ef1 b\u1ea5m \u4eca\u3059\u3050\u652f\u6255\u3046. Gi\u1eef Safari m\u1edf v\u00e0 m\u00e0n h\u00ecnh s\u00e1ng.')
     : L('Mellojoy JP : \u30b7\u30e7\u30c3\u30d7\u3078\u306e\u30ed\u30b0\u30a4\u30f3\u5fc5\u9808\uff08\u4fdd\u5b58\u6e08\u307f\u306e\u4f4f\u6240\u30fb\u30ab\u30fc\u30c9\u3067\u652f\u6255\u3044\uff09\u3002\u5546\u54c1\u30b3\u30fc\u30c9\uff08\u4f8b A026\uff09\u30fb\u5546\u54c1\u540d\u30fb\u30d0\u30ea\u30a2\u30f3\u30c8ID \u3068\u500b\u6570\u3092\u5165\u529b\u3002\u63b2\u8f09\u6e08\u307f\u306e\u5546\u54c1\uff08\u58f2\u308a\u5207\u308c\u8868\u793a\u4e2d\u3082\uff09\u306f\u8ca9\u58f2\u958b\u59cb\u3068\u540c\u6642\u306b\u76f4\u63a5\u30ab\u30fc\u30c8\u3078\u8ffd\u52a0\u3057\u307e\u3059\u3002\u5728\u5eab\u304c\u51fa\u305f\u3089\u30ab\u30fc\u30c8\u306b\u5165\u308c\u3066\u8cfc\u5165\u753b\u9762\u3092\u958b\u304d\u307e\u3059\uff08\u300c\u4eca\u3059\u3050\u652f\u6255\u3046\u300d\u306f\u81ea\u5206\u3067\u30bf\u30c3\u30d7\uff09\u3002', 'Mellojoy JP : b\u1eaft bu\u1ed9c login shop (tr\u1ea3 b\u1eb1ng \u0111\u1ecba ch\u1ec9, th\u1ebb \u0111\u00e3 l\u01b0u trong t\u00e0i kho\u1ea3n). Nh\u1eadp m\u00e3 s\u1ea3n ph\u1ea9m (VD A026), t\u00ean m\u00f3n ho\u1eb7c Variant ID + s\u1ed1 l\u01b0\u1ee3ng. M\u00f3n \u0111\u00e3 l\u00ean trang (k\u1ec3 c\u1ea3 \u0111ang b\u00e1o h\u1ebft h\u00e0ng) BOT th\u00eam th\u1eb3ng v\u00e0o gi\u1ecf ngay l\u00fac m\u1edf b\u00e1n. C\u00f3 h\u00e0ng BOT th\u00eam gi\u1ecf v\u00e0 m\u1edf trang thanh to\u00e1n, b\u1ea1n t\u1ef1 b\u1ea5m \u4eca\u3059\u3050\u652f\u6255\u3046.')}</div>
   <div class="r"${IS_US ? ' style="display:none"' : ''}><span class="lb">\u23f0</span><input type="time" id="pjcopen"><span class="desc" style="margin:0">${L('\u8ca9\u58f2\u958b\u59cb\uff08\u65e5\u672c\u6642\u9593\uff09\u30fb\u521d\u671f\u5024', 'Gi\u1edd m\u1edf b\u00e1n (gi\u1edd Nh\u1eadt) \u00b7 m\u1eb7c \u0111\u1ecbnh')} ${IS_US ? usDefault : jpDefault}</span></div>
+  <div class="r"><label class="desc" for="pjcmonitor">モニターディレイ（ms）</label><input id="pjcmonitor" type="number" min="${POLL_MS}" max="30000" step="1" inputmode="numeric" placeholder="自動"></div>
   ${Array.from({ length: MAX_KW }, (_, i) => i).map((i) => `<div class="r kwrow" id="pjcr${i}"><span class="lb">KW${i + 1}</span><input id="pjck${i}" placeholder="${L('\u4f8b: 42727888976830 / 111&222&333 / A026 / \u30c9\u30fc\u30ca\u30c4', 'VD: 42727888976830 / 111&222&333 / A026 / \u30c9\u30fc\u30ca\u30c4')}">${qtySel('pjcq' + i)}</div>`).join('')}
   <div class="r"><button id="pjcadd">\uff0b ${L('\u30ad\u30fc\u30ef\u30fc\u30c9\u8ffd\u52a0', 'Th\u00eam t\u1eeb kh\u00f3a')}</button><button id="pjcdel">\uff0d</button><span class="desc" id="pjccnt" style="margin:0"></span></div>
   <div class="r"><span class="lb">${L('\u4e88\u5099', 'D\u1ef1 ph\u00f2ng')}</span><input id="pjckb" placeholder="${L('\u58f2\u308a\u5207\u308c\u6642\u306b\u4ee3\u308f\u308a\u306b\u8cb7\u3046', 'Mua thay khi m\u00f3n tr\u00ean h\u1ebft h\u00e0ng')}">${qtySel('pjcqb')}</div>
@@ -2009,6 +2017,8 @@ if (!SYNOVA_DUP && /mellojoy(japan|us)\.com$/.test(location.hostname)) {
   $('pjcb_cclr').onclick = () => { for (const k of ['cnum', 'cexp', 'ccvv', 'cname']) $('pjcb_' + k).value = ''; readBuy(); };
   buyMsg();
   $('pjcopen').value = cfg.open || '';
+  cfg.monitorDelay = monitorDelay(cfg.monitorDelay, POLL_MS);
+  $('pjcmonitor').value = cfg.monitorDelay || '';
   // \u0110\u1ed5i ch\u1eef n\u00fat ngay khi g\u00f5 gi\u1edd (KH\u00d4NG \u0111\u1ed5i l\u00fac 'change': change b\u1eafn khi \u00f4 m\u1ea5t focus, t\u1ee9c l\u00e0
   // gi\u1eefa l\u00fac ch\u1ea1m v\u00e0 nh\u1ea3 ng\u00f3n tay tr\u00ean n\u00fat -> Safari b\u1ecf m\u1ea5t c\u00fa b\u1ea5m)
   if (!IS_US) $('pjcopen').addEventListener('input', () => { const t = $('pjcopen').value ? L(`${$('pjcopen').value} \u306b\u4e88\u7d04\u30fb\u81ea\u52d5\u30b9\u30bf\u30fc\u30c8`, `H\u1eb9n \u0111\u1ebfn ${$('pjcopen').value} T\u1ef1 B\u1eadt`) : L('\u8ca9\u58f2\u958b\u59cb\u6642\u523b\u3092\u5165\u529b\u3057\u3066\u304f\u3060\u3055\u3044', 'H\u00e3y nh\u1eadp gi\u1edd m\u1edf b\u00e1n'); if ($('pjcgo').textContent !== t) $('pjcgo').textContent = t; });

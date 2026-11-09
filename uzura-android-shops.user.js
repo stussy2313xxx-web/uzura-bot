@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          うずら BOT Android — ショップ・購入通知
 // @namespace     uzura.bot.android.shops
-// @version       2.1.44.10937
+// @version       2.1.44.10938
 // @description   Android版。Shopify、Supreme、HUMAN MADE、Buffer、Palace、and STなどの購入補助とDiscord購入通知。
 // @match         https://*/*
 // @run-at        document-start
@@ -216,6 +216,11 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
   else mount();
 })();
 
+const uzuraMonitorDelay = (value, minimum) => {
+  const ms = Number(value);
+  return Number.isFinite(ms) && ms > 0 ? Math.min(30000, Math.max(minimum, Math.round(ms))) : 0;
+};
+
 (function uzuraVallad() {
   'use strict';
   const host = 'test.valladstudio.com';
@@ -229,9 +234,35 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
   const shopId = 'PA01524832';
   const intentKey = 'uzura-vallad-cart-intent';
   const scheduleKey = 'uzura-vallad-schedule-v1';
+  const delayKey = pid === null ? 'uzura-vallad-monitor-delay' : 'uzura-vallad-product-monitor-delay';
   const logKey = 'uzura-vallad-run-log-v1';
   const watchMs = 120000;
   const pollMs = 300;
+  const productPollMs = 5000;
+  const delayInput = minimum => '<p><label>モニターディレイ（ms） <input data-monitor type="number" min="' + minimum +
+    '" max="30000" step="1" inputmode="numeric" placeholder="自動" style="width:6em;font-size:16px"></label></p>';
+  function setupDelay(input, minimum) {
+    try { input.value = uzuraMonitorDelay(localStorage.getItem(delayKey), minimum) || ''; } catch {}
+    input.onchange = () => {
+      const value = uzuraMonitorDelay(input.value, minimum);
+      input.value = value || '';
+      try { localStorage.setItem(delayKey, String(value)); } catch {}
+      return value;
+    };
+    return input.onchange;
+  }
+  function waitForNextCheck(ms, signal) {
+    return new Promise(resolve => {
+      if (signal.aborted || ms <= 0) { resolve(); return; }
+      const timer = setTimeout(done, ms);
+      function done() {
+        clearTimeout(timer);
+        signal.removeEventListener('abort', done);
+        resolve();
+      }
+      signal.addEventListener('abort', done, { once: true });
+    });
+  }
   const catalogUrl = new URL('/', url.origin);
   catalogUrl.searchParams.set('mode', 'srh');
   const productUrl = id => new URL('/?pid=' + id, url.origin);
@@ -451,13 +482,15 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
       '<p><label>サイズ <input data-size type="text" placeholder="例 M" style="width:5em;font-size:16px"></label> ' +
       '<label>数量 <input data-qty type="number" min="1" max="20" value="1" style="width:4em;font-size:16px"></label></p>' +
       '<p><label>発売日時（日本時間）<br><input data-at type="datetime-local" style="max-width:100%;font-size:16px"></label></p>' +
+      delayInput(pollMs) +
       '<p><button type="button" data-arm>発売時刻に開始</button> <button type="button" data-now>すぐ実行</button> ' +
       '<button type="button" data-stop disabled>停止</button></p><p data-status role="status"></p>' +
       '<small>商品IDは商品URLの pid= に続く数字。商品名は色名まで入力。型番は新着一覧の先頭12商品を確認します。サイズ展開がない商品はサイズ欄を空欄にします。</small>';
     const field = name => panel.querySelector('[data-' + name + ']');
     const by = field('by'), code = field('code'), size = field('size'), qty = field('qty'), at = field('at');
     at.value = new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10) + 'T20:00';
-    const arm = field('arm'), now = field('now'), stop = field('stop');
+    const arm = field('arm'), now = field('now'), stop = field('stop'), delay = field('monitor');
+    const saveDelay = setupDelay(delay, pollMs);
     const say = message => {
       const status = field('status');
       if (status.textContent !== message) log(message);
@@ -465,7 +498,7 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
     };
     let timer, controller;
     function active(value) {
-      for (const input of [by, code, size, qty, at, arm, now]) input.disabled = value;
+      for (const input of [by, code, size, qty, at, arm, now, delay]) input.disabled = value;
       stop.disabled = !value;
     }
     function clear() {
@@ -507,7 +540,9 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
             foundName = match.item.product.name;
             say(foundName + '：指定数量をカートに入れられる状態を待っています。');
           }
-          await new Promise(resolve => setTimeout(resolve, pollMs));
+          const untilEnd = task.at + watchMs - Date.now();
+          const interval = uzuraMonitorDelay(task.monitorDelay, pollMs) || pollMs;
+          await waitForNextCheck(Math.min(interval, untilEnd), current.signal);
         }
         if (!current.signal.aborted) expire();
       } catch (error) {
@@ -530,7 +565,7 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
         if (!Number.isFinite(when) || (!immediate && when <= Date.now())) throw new Error('未来の発売日時を入力してください');
         if (!validQuantity(qty.valueAsNumber)) throw new Error('数量は1〜20で入力してください');
         const task = { ...parseTarget(code.value, by.value), by: by.value, code: code.value.trim(), size: normalize(size.value),
-          quantity: qty.valueAsNumber, at: when, inputTime: at.value };
+          quantity: qty.valueAsNumber, at: when, inputTime: at.value, monitorDelay: saveDelay() };
         sessionStorage.setItem(scheduleKey, JSON.stringify(task));
         schedule(task);
       } catch (error) { say(error.message || '開始できませんでした'); }
@@ -552,6 +587,7 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
       size.value = task.size;
       qty.value = String(task.quantity);
       at.value = task.inputTime;
+      delay.value = uzuraMonitorDelay(task.monitorDelay, pollMs) || '';
       if (!Number.isFinite(task.at) || !validQuantity(task.quantity) || Date.now() >= task.at + watchMs) {
         clear();
         say('開始から2分が経過しました。');
@@ -580,10 +616,11 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
     catch (error) { showGuide(error.message); return; }
 
     const panel = makePanel();
-    panel.innerHTML = '<summary>うずら BOT · VALLAD</summary><p data-product></p><p><label>サイズ <select data-size></select></label> <label>数量 <input data-qty type="number" min="1" max="20" value="1" style="width:4em"></label></p><p><button type="button" data-add>カートに入れる</button> <button type="button" data-watch>在庫を待つ</button></p><p data-status role="status"></p><a data-catalog style="color:#fff">商品一覧</a>';
+    panel.innerHTML = '<summary>うずら BOT · VALLAD</summary><p data-product></p><p><label>サイズ <select data-size></select></label> <label>数量 <input data-qty type="number" min="1" max="20" value="1" style="width:4em"></label></p>' + delayInput(productPollMs) + '<p><button type="button" data-add>カートに入れる</button> <button type="button" data-watch>在庫を待つ</button></p><p data-status role="status"></p><a data-catalog style="color:#fff">商品一覧</a>';
     const find = name => panel.querySelector('[data-' + name + ']');
     const size = find('size'), qty = find('qty'), status = find('status');
-    const add = find('add'), watch = find('watch');
+    const add = find('add'), watch = find('watch'), delay = find('monitor');
+    const saveDelay = setupDelay(delay, productPollMs);
     find('product').textContent = item.product.name;
     find('catalog').href = catalogUrl.href;
     for (const choice of item.sizes) {
@@ -636,7 +673,8 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
         const run = new AbortController();
         controller = run;
         watch.textContent = '停止';
-        add.disabled = size.disabled = qty.disabled = true;
+        add.disabled = size.disabled = qty.disabled = delay.disabled = true;
+        const interval = saveDelay() || productPollMs;
         const expires = Date.now() + 120000;
         say('指定サイズ・数量の在庫を最大2分確認します');
         while (!run.signal.aborted && Date.now() < expires) {
@@ -660,7 +698,7 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
             location.reload();
             return;
           }
-          await new Promise(resolve => setTimeout(resolve, 5000));
+          await waitForNextCheck(Math.min(interval, expires - Date.now()), run.signal);
         }
         say(run.signal.aborted ? '在庫確認を停止しました' : '2分で在庫確認を終了しました');
       } catch (error) {
@@ -669,7 +707,7 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
       } finally {
         controller = null;
         watch.textContent = '在庫を待つ';
-        if (!submitted) add.disabled = size.disabled = qty.disabled = false;
+        if (!submitted) add.disabled = size.disabled = qty.disabled = delay.disabled = false;
       }
     };
     window.addEventListener('pagehide', () => controller?.abort(), { once: true });
@@ -692,7 +730,7 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
   else boot();
 })();
 
-const UZURA_AND_ST_VERSION = "2.1.44.10937";
+const UZURA_AND_ST_VERSION = "2.1.44.10938";
 const UZURA_SHOP_PANEL_ICON = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MCIgaGVpZ2h0PSI4MCIgdmlld0JveD0iMCAwIDgwIDgwIj48Y2lyY2xlIGN4PSI0MCIgY3k9IjQwIiByPSIzNiIgZmlsbD0iI2ZmZmZmZiIvPjx0ZXh0IHg9IjQwIiB5PSI1NSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1mYW1pbHk9IkFyaWFsLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iNDYiIGZvbnQtd2VpZ2h0PSJib2xkIiBmaWxsPSIjMTAyMTNiIj5VPC90ZXh0Pjwvc3ZnPg==";
 const UZURA_SHOP_PANEL_CSS = `#sxbbox,#sxbbox *{box-sizing:border-box;line-height:1.35;text-transform:none;letter-spacing:normal}
 #sxbbox button{width:auto;height:auto;min-height:0;min-width:0;max-width:none;display:inline-block;text-align:center;cursor:pointer}
@@ -797,6 +835,7 @@ const UZURA_SHOP_PANEL_CSS = `#sxbbox,#sxbbox *{box-sizing:border-box;line-heigh
       <div class="body" data-body>
         <div class="desc">and ST公式。通常販売の商品を1点カートに入れます。先に公式ストアでログインして配送先を準備してください。</div>
         <div class="r"><span class="lb">⏰</span><input data-time type="datetime-local" aria-label="発売日時（日本時間）"><span class="desc">発売日時（日本時間）</span></div>
+        <div class="r"><label class="desc" for="and-st-monitor">モニターディレイ（ms）</label><input data-monitor id="and-st-monitor" type="number" min="${every}" max="30000" step="1" inputmode="numeric" placeholder="自動"></div>
         <div class="kw">
           <div class="r"><label class="lb" for="and-st-query">KW1</label><input id="and-st-query" data-query type="text" placeholder="商品名・品番・商品URL"></div>
           <div class="r"><span class="lb"></span><input data-color type="text" aria-label="色" placeholder="色（ショップ表記）"><input data-size class="sz" type="text" aria-label="サイズ" placeholder="サイズ"><select class="qty" aria-label="数量" disabled><option>1</option></select></div>
@@ -866,13 +905,23 @@ const UZURA_SHOP_PANEL_CSS = `#sxbbox,#sxbbox *{box-sizing:border-box;line-heigh
     };
     applyUi();
     let task = read(key, null);
+    const delay = field('monitor');
+    const delayKey = 'uzura-and-st-monitor-delay';
+    try { delay.value = uzuraMonitorDelay(localStorage.getItem(delayKey), every) || ''; } catch {}
+    function saveDelay() {
+      const value = uzuraMonitorDelay(delay.value, every);
+      delay.value = value || '';
+      try { localStorage.setItem(delayKey, String(value)); } catch {}
+      return value;
+    }
+    delay.onchange = saveDelay;
     const mountedAt = Date.now();
     let timer;
     let request;
 
     const persist = () => task ? sessionStorage.setItem(key, JSON.stringify(task)) : sessionStorage.removeItem(key);
     function controls() {
-      field('now').disabled = field('schedule').disabled = !!task;
+      field('now').disabled = field('schedule').disabled = delay.disabled = !!task;
       field('stop').disabled = !task || !!task.submittedAt;
     }
     function finish(message, showCart = false) {
@@ -929,7 +978,8 @@ const UZURA_SHOP_PANEL_CSS = `#sxbbox,#sxbbox *{box-sizing:border-box;line-heigh
       }
       status('指定の色・サイズでカートに入れられる在庫を確認しています。');
       const untilEnd = deadline - Date.now();
-      again(every < untilEnd ? () => location.reload() : checkProduct, Math.min(every, untilEnd));
+      const interval = uzuraMonitorDelay(task.monitorDelay, every) || every;
+      again(interval < untilEnd ? () => location.reload() : checkProduct, Math.min(interval, untilEnd));
     }
     async function run() {
       const current = task;
@@ -951,7 +1001,8 @@ const UZURA_SHOP_PANEL_CSS = `#sxbbox,#sxbbox *{box-sizing:border-box;line-heigh
           if (task !== current) return;
           if (!match) {
             status('商品検索 · 一致なし。再確認します。');
-            return again(run, Math.min(every, current.start + runLength - Date.now()));
+            const interval = uzuraMonitorDelay(current.monitorDelay, every) || every;
+            return again(run, Math.min(interval, current.start + runLength - Date.now()));
           }
           if (Date.now() >= current.start + runLength) return finish('2分で終了しました。');
           current.url = match.href;
@@ -980,7 +1031,7 @@ const UZURA_SHOP_PANEL_CSS = `#sxbbox,#sxbbox *{box-sizing:border-box;line-heigh
       if (scheduled && (!Number.isFinite(startAt) || startAt <= Date.now())) {
         return status('これからの発売日時を日本時間で指定してください。');
       }
-      task = { query, url: item?.href, color: clean(field('color').value), size: clean(field('size').value), start: startAt };
+      task = { query, url: item?.href, color: clean(field('color').value), size: clean(field('size').value), start: startAt, monitorDelay: saveDelay() };
       persist();
       controls();
       field('cart').hidden = true;
@@ -994,6 +1045,7 @@ const UZURA_SHOP_PANEL_CSS = `#sxbbox,#sxbbox *{box-sizing:border-box;line-heigh
       field('query').value = task.query;
       field('color').value = task.color;
       field('size').value = task.size;
+      delay.value = uzuraMonitorDelay(task.monitorDelay, every) || '';
       controls();
       void run();
     }
@@ -1023,7 +1075,7 @@ window.__synovashop = true;
 const SYNOVA_WEBHOOK = ''; // Author's fixed notification destination disabled.
 const SYNOVA_LOGO_B64 = '';
 const SYNOVA_NAME = 'うずら BOT';
-const UZURA_RELEASE = '2.1.44.10937';
+const UZURA_RELEASE = '2.1.44.10938';
 const SYNOVA_VERSION = '1.9.8';
 const SYNOVA_ICON = UZURA_SHOP_PANEL_ICON;
 const SYNOVA_TITLE = '';
@@ -1222,6 +1274,7 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
   const FAST_MS = 200, MAX_INFLIGHT = 5;      // gi\u1edd m\u1edf b\u00e1n: 0,2 gi\u00e2y/l\u01b0\u1ee3t, t\u1ed1i \u0111a 5 l\u01b0\u1ee3t c\u00f9ng l\u00fac
   const NOW_MS = 300, NOW_INFLIGHT = 4;       // "Ch\u1ea1y Ngay" / canh l\u00e2u: 0,3 gi\u00e2y/l\u01b0\u1ee3t, 4 l\u01b0\u1ee3t c\u00f9ng l\u00fac (tr\u01b0\u1edbc: 0,8 gi\u00e2y, ch\u1edd l\u01b0\u1ee3t tr\u01b0\u1edbc xong)
   const FAST_FOR_MS = 30000;
+  const minMonitorDelay = IS_PAL || IS_GEN ? 1500 : FAST_MS;
   // b\u1ecb 429: nh\u1ecbp t\u1ef1 gi\u00e3n (\u00d71,6 m\u1ed7i l\u1ea7n, t\u1ed1i \u0111a \u00d78), qu\u00e9t \u0111\u01b0\u1ee3c l\u1ea1i th\u00ec nhanh d\u1ea7n v\u1ec1 nh\u1ecbp g\u1ed1c
   let pace = 1;
   const BACKOFF_MIN = 1000, BACKOFF_MAX = 8000;   // 429: ngh\u1ec9 1 \u2192 2 \u2192 4 \u2192 8 gi\u00e2y
@@ -1949,9 +2002,9 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
       setStatus(L('\u5728\u5eab\u76e3\u8996\u4e2d\u2026', '\u0110ang canh h\u00e0ng\u2026') + (pace > 1.05 ? ` (\u00d7${pace.toFixed(1)})` : ''));
       // c\u00e1c l\u01b0\u1ee3t ch\u1ed3ng l\u00ean nhau (kh\u00f4ng ch\u1edd l\u01b0\u1ee3t tr\u01b0\u1edbc tr\u1ea3 l\u1eddi): m\u1ea1ng ch\u1eadm v\u1eabn c\u00f3 k\u1ebft qu\u1ea3 m\u1edbi li\u00ean t\u1ee5c
       const fast = !st.now && left > -FAST_FOR_MS;
-      if (IS_PAL || IS_GEN) { if (!inflight) await scanOnce(); await sleep(Math.max(1500, backoffUntil-Date.now())); continue; }
+      if (IS_PAL || IS_GEN) { if (!inflight) await scanOnce(); await sleep(Math.max(minMonitorDelay, cfg.monitorDelay, backoffUntil - Date.now())); continue; }
       if (inflight < (fast ? MAX_INFLIGHT : NOW_INFLIGHT)) scanOnce();
-      await sleep(Math.max(20, (fast ? FAST_MS : NOW_MS) * pace + Math.random() * 40 - (Date.now() - t0)));
+      await sleep(Math.max(20, Math.max(fast ? FAST_MS : NOW_MS, cfg.monitorDelay) * pace + Math.random() * 40 - (Date.now() - t0)));
     }
   }
 
@@ -2019,6 +2072,9 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
       cfg.items[i].qty = +$('sxbq' + i).value;
     }
     cfg.open = $('sxbopen').value;
+    const delay = $('sxbmonitor');
+    cfg.monitorDelay = uzuraMonitorDelay(delay.value, minMonitorDelay);
+    delay.value = cfg.monitorDelay || '';
     save(K_CFG, cfg);
   }
   let sxRoot = null;                          // Shadow DOM ch\u1ee9a khung BOT
@@ -2090,6 +2146,7 @@ ${UZURA_SHOP_PANEL_CSS}</style>
 <div class="body">
   <div class="desc">${DESC}</div>${UZURA_CURRENT ? `<div class="desc">対応店舗: ${SHOP} ／ 商品取得形式を確認済み・実購入は未検証</div>` : ''}
   <div class="r"><span class="lb">\u23f0</span><input type="time" id="sxbopen"><span class="desc" style="margin:0">${L('\u8ca9\u58f2\u958b\u59cb\uff08\u65e5\u672c\u6642\u9593\uff09', 'Gi\u1edd m\u1edf b\u00e1n (gi\u1edd Nh\u1eadt)')}</span></div>
+  <div class="r"><label class="desc" for="sxbmonitor">モニターディレイ（ms）</label><input id="sxbmonitor" type="number" min="${minMonitorDelay}" max="30000" step="1" inputmode="numeric" placeholder="自動"></div>
   ${Array.from({ length: MAX_KW }, (_, i) => `<div class="kw" id="sxbr${i}"><div class="r"><span class="lb">KW${i + 1}</span><input id="sxbk${i}" placeholder="${IS_SUP ? L('\u4f8b: polartec jacket', 'VD: polartec jacket') : L('\u4f8b: tee', 'VD: tee')}"></div>` +
     `<div class="r"><span class="lb"></span><input id="sxbc${i}" placeholder="${L('\u8272\uff08\u4f8b: black\uff09', 'M\u00e0u (VD: black)')}"><input class="sz" id="sxbs${i}" placeholder="${L('\u30b5\u30a4\u30ba', 'Size')}">${qtySel('sxbq' + i)}</div></div>`).join('')}
   <div class="r"><button id="sxbadd">\uff0b ${L('\u30ad\u30fc\u30ef\u30fc\u30c9\u8ffd\u52a0', 'Th\u00eam t\u1eeb kh\u00f3a')}</button><button id="sxbdel">\uff0d</button><span class="desc" id="sxbcnt" style="margin:0"></span></div>
@@ -2132,6 +2189,8 @@ ${UZURA_SHOP_PANEL_CSS}</style>
     readCfg(); showRows();
   };
   $('sxbopen').value = cfg.open || '';
+  cfg.monitorDelay = uzuraMonitorDelay(cfg.monitorDelay, minMonitorDelay);
+  $('sxbmonitor').value = cfg.monitorDelay || '';
   // \u0111\u1ed5i ch\u1eef n\u00fat khi g\u00f5 gi\u1edd ('input', kh\u00f4ng d\u00f9ng 'change' \u2013 Safari b\u1ecf m\u1ea5t c\u00fa b\u1ea5m khi \u00f4 m\u1ea5t focus)
   $('sxbopen').addEventListener('input', () => { const t = goLabel($('sxbopen').value); if ($('sxbgo').textContent !== t) $('sxbgo').textContent = t; });
   {
