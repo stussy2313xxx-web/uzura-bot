@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         うずら BOT — Mellojoy・Shop対応
 // @namespace    uzura.mellojoy.shop
-// @version      2.1.44.10936
+// @version      2.1.44.10937
 // @updateURL    https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.meta.js
 // @downloadURL  https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.user.js
 // @description  Mellojoy・Shopify・Supreme・HUMAN MADE・Buffer・Palace・and STの購入補助。購入成功時のDiscord通知に対応。
@@ -696,6 +696,39 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
   else boot();
 })();
 
+const UZURA_AND_ST_VERSION = "2.1.44.10937";
+const UZURA_SHOP_PANEL_ICON = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MCIgaGVpZ2h0PSI4MCIgdmlld0JveD0iMCAwIDgwIDgwIj48Y2lyY2xlIGN4PSI0MCIgY3k9IjQwIiByPSIzNiIgZmlsbD0iI2ZmZmZmZiIvPjx0ZXh0IHg9IjQwIiB5PSI1NSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1mYW1pbHk9IkFyaWFsLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iNDYiIGZvbnQtd2VpZ2h0PSJib2xkIiBmaWxsPSIjMTAyMTNiIj5VPC90ZXh0Pjwvc3ZnPg==";
+const UZURA_SHOP_PANEL_CSS = `#sxbbox,#sxbbox *{box-sizing:border-box;line-height:1.35;text-transform:none;letter-spacing:normal}
+#sxbbox button{width:auto;height:auto;min-height:0;min-width:0;max-width:none;display:inline-block;text-align:center;cursor:pointer}
+#sxbbox input,#sxbbox select{height:auto;min-height:0;max-width:none;width:auto;display:block}
+#sxbbox img{max-width:100%;border:0}
+#sxbbox{position:fixed;left:8px;right:8px;z-index:2147483647;background:#0d1b32;color:#f2f2f2;border:1px solid #527198;border-radius:16px;
+  box-shadow:0 6px 24px #000c;padding:10px 12px;font:13px -apple-system,"Hiragino Sans",sans-serif;text-align:left;letter-spacing:0;text-transform:none}
+#sxbbox.top{top:calc(env(safe-area-inset-top) + 6px)} #sxbbox.bot{bottom:calc(env(safe-area-inset-bottom) + 10px)}
+#sxbbox .hd{display:flex;gap:6px;align-items:center;font-weight:700}
+#sxbbox .hd button{padding:6px 7px;font-size:12px;white-space:nowrap;flex:none}
+#sxbbox .ttl{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;justify-content:center}
+#sxbbox .ver{font-size:10px;font-weight:600;color:#b7c8df;letter-spacing:.5px;margin-top:1px;line-height:1}
+#sxbbox button{border:1px solid #527198;background:#203a5d;color:#ffffff;border-radius:10px;padding:7px 10px;font-size:13px;font-weight:700;text-shadow:none;box-shadow:none;margin:0}
+#sxbbox .btns{flex-wrap:wrap} #sxbbox .btns button{flex:1;white-space:nowrap} #sxbbox .btns button.main{flex:1 1 100%}
+#sxbbox button.main{font-size:14px;padding:9px 10px;background:linear-gradient(180deg,#e8f0fc,#ffffff);color:#10213b;border:0;box-shadow:0 2px 10px #ffffff40}
+#sxbbox .r{display:flex;gap:6px;margin-top:6px;align-items:center}
+#sxbbox input{flex:1;min-width:0;font-size:16px;padding:6px 8px;border:1px solid #527198;border-radius:8px;background:#162a46;color:#fff;margin:0;height:auto}
+#sxbbox input.sz{flex:0 0 64px} #sxbbox .kw{border-top:1px solid #1f1d24;margin-top:6px} #sxbbox .kw .r{margin-top:4px}
+#sxbbox .sec{border:1px solid #385573;border-radius:10px;padding:4px 8px 8px;margin-top:8px} #sxbbox .sec b{color:#ffffff;font-size:12px}
+#sxbbox label.ck{display:flex;gap:8px;align-items:center;margin-top:6px;font-size:13px} #sxbbox label.ck input{flex:none;width:20px;height:20px;padding:0;border:0;background:none;-webkit-appearance:checkbox;appearance:auto;accent-color:#ffffff}
+#sxbbox input::placeholder{color:#a9bed8}
+#sxbbox input:focus,#sxbbox select:focus{outline:none;border-color:#ffffff;box-shadow:0 0 0 2px #ffffff40}
+#sxbbox select{-webkit-appearance:none;appearance:none;font-size:16px;padding:6px 22px 6px 10px;border-radius:8px;background:#162a46 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23ffffff' stroke-width='2' fill='none'/%3E%3C/svg%3E") no-repeat right 7px center;color:#fff;border:1px solid #527198;font-weight:700;margin:0;height:auto}
+#sxbbox input[type=time]{flex:0 0 auto;width:110px;color-scheme:dark}
+#sxbbox .lb{width:34px;font-size:11px;color:#ffffff;font-weight:700;flex:none}
+#sxbbox .desc{font-size:12px;color:#c2d1e5;margin-top:4px} #sxbbox .st{font-size:12px;color:#ffffff;font-weight:700;margin-top:3px}
+#sxbbox .body{max-height:calc(100vh - 160px);overflow-y:auto;-webkit-overflow-scrolling:touch}
+#sxbbox button:disabled{opacity:.35}
+#sxbbox button,#sxbbox input,#sxbbox select{font-family:-apple-system,"Hiragino Sans",sans-serif}
+#sxblog{display:block;max-height:220px;overflow:auto;white-space:pre-wrap;font:11px ui-monospace,monospace;background:#10213b;color:#cfdeef;border:1px solid #385573;border-radius:8px;padding:6px;margin-top:6px}
+`;
+
 // and ST uses the official product picker and its existing cart handler.
 (function uzuraAndSt() {
   'use strict';
@@ -720,14 +753,15 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
   };
   const visible = element => element && element.getClientRects().length && getComputedStyle(element).visibility !== 'hidden';
 
+  class SearchError extends Error {}
   async function search(task, signal) {
     const url = new URL('/disp/itemlist/', origin);
     url.searchParams.set('q', task.query.normalize('NFKC'));
     const response = await fetch(url, { cache: 'no-store', signal });
-    if (!response.ok) throw new Error('商品検索を停止しました（HTTP ' + response.status + '）');
-    if (new URL(response.url).pathname !== url.pathname) throw new Error('公式ストアの商品検索画面を開いてください。');
+    if (!response.ok) throw new SearchError('商品検索を停止しました（HTTP ' + response.status + '）');
+    if (new URL(response.url).pathname !== url.pathname) throw new SearchError('公式ストアの商品検索画面を開いてください。');
     const doc = new DOMParser().parseFromString(await response.text(), 'text/html');
-    if (!doc.querySelector('form[action="/disp/itemlist/"]')) throw new Error('公式ストアの検索結果を確認できません。');
+    if (!doc.querySelector('form[action="/disp/itemlist/"]')) throw new SearchError('公式ストアの検索結果を確認できません。');
     const matches = new Map();
     const query = clean(task.query);
     const byCode = /^\d+$/.test(query);
@@ -740,43 +774,102 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
     }
     const exact = [...matches.values()].filter(match => match.exact);
     const candidates = exact.length ? exact : [...matches.values()];
-    if (candidates.length > 1) throw new Error('複数の商品が一致しました。品番か商品URLを指定してください。');
+    if (candidates.length > 1) throw new SearchError('複数の商品が一致しました。品番か商品URLを指定してください。');
     return candidates[0]?.item ?? null;
   }
 
   function mount() {
     if (document.getElementById('uzura-and-st')) return;
-    const panel = document.createElement('details');
-    panel.id = 'uzura-and-st';
+    const host = document.createElement('div');
+    host.id = 'uzura-and-st';
+    host.style.cssText = 'all:initial;position:fixed;z-index:2147483647;top:0;left:0;width:0;height:0';
+    const shadow = host.attachShadow({ mode: 'open' });
+    const panel = document.createElement('div');
+    panel.id = 'sxbbox';
     panel.innerHTML = `
       <style>
-      #uzura-and-st{position:fixed;bottom:max(16px,env(safe-area-inset-bottom));right:12px;z-index:2147483646;
-        box-sizing:border-box;width:min(360px,calc(100% - 24px));max-height:75vh;overflow:auto;padding:12px;
-        background:#101f36;color:#fff;border:1px solid #496688;border-radius:14px;
-        box-shadow:0 4px 16px #0004;font:15px/1.45 system-ui,sans-serif;color-scheme:dark}
-      #uzura-and-st summary{cursor:pointer;font-weight:700}
-      #uzura-and-st label{display:block;margin-top:8px}
-      #uzura-and-st input,#uzura-and-st button{box-sizing:border-box;padding:6px 8px;
-        min-height:35px;border:1px solid #6c89a7;border-radius:6px;font:inherit}
-      #uzura-and-st input{width:100%;background:#1c324f;color:#fff}
-      #uzura-and-st input::placeholder{color:#c6d6e8;opacity:1}
-      #uzura-and-st button{margin:8px 4px 0 0;background:#f3f7fc;color:#10213b;cursor:pointer}
-      #uzura-and-st button:disabled{opacity:.55;cursor:default}
-      #uzura-and-st p{margin:8px 0 0} #uzura-and-st a{color:#fff;text-decoration:underline}
+      ${UZURA_SHOP_PANEL_CSS}
+      #sxbbox [hidden]{display:none!important}
+      #sxbbox .body{max-height:70vh}
+      #sxbbox a{color:#fff;text-decoration:underline}
+      #sxbbox .purchase-actions{flex-wrap:wrap}
+      #sxbbox .restore{margin-left:auto}
+      #sxbbox .qty{flex:none}
       </style>
-      <summary>うずら BOT · and ST</summary>
-      <label>商品名・品番・商品URL<input data-query type="text" placeholder="商品詳細を開いている場合は空欄でOK"></label>
-      <label>色（ショップ表記）<input data-color type="text" placeholder="例 ブラック"></label>
-      <label>サイズ（ショップ表記）<input data-size type="text" placeholder="例 M"></label>
-      <label>発売日時（日本時間）<input data-time type="datetime-local"></label>
-      <button type="button" data-now>すぐ実行</button><button type="button" data-schedule>予約</button><button type="button" data-stop disabled>停止</button>
-      <p data-status role="status">色・サイズが複数ある場合は指定してください。通常販売の商品を1点カートに入れます。</p>
-      <a data-cart href="/cart/" hidden>公式カートを開く</a>`;
-    document.body.append(panel);
+      <div class="hd"><img src="${UZURA_SHOP_PANEL_ICON}" alt="" width="40" height="40" style="flex:none;mix-blend-mode:screen"><b class="ttl"><span style="font:900 20px/1.3 -apple-system,sans-serif;color:#ffffff">うずら BOT</span><span class="ver">and ST · v${UZURA_AND_ST_VERSION}</span></b><button type="button" data-position>上下</button><button type="button" data-collapse>隠す</button></div>
+      <div class="st" data-status role="status">停止中</div>
+      <div class="body" data-body>
+        <div class="desc">and ST公式。通常販売の商品を1点カートに入れます。先に公式ストアでログインして配送先を準備してください。</div>
+        <div class="r"><span class="lb">⏰</span><input data-time type="datetime-local" aria-label="発売日時（日本時間）"><span class="desc">発売日時（日本時間）</span></div>
+        <div class="kw">
+          <div class="r"><label class="lb" for="and-st-query">KW1</label><input id="and-st-query" data-query type="text" placeholder="商品名・品番・商品URL"></div>
+          <div class="r"><span class="lb"></span><input data-color type="text" aria-label="色" placeholder="色（ショップ表記）"><input data-size class="sz" type="text" aria-label="サイズ" placeholder="サイズ"><select class="qty" aria-label="数量" disabled><option>1</option></select></div>
+        </div>
+        <div class="desc">商品詳細を開いている場合はKW1を空欄にできます。色・サイズが複数ある場合は公式の表記で指定してください。</div>
+        <div class="r"><button type="button" data-purchase aria-expanded="false" aria-controls="and-st-purchase">⚙️ 配送先・支払い</button></div>
+        <div class="sec" id="and-st-purchase" data-purchase-panel hidden>
+          <b>配送先</b>
+          <div class="desc">公式マイページの「会員情報の変更」で氏名・住所を登録してください。注文画面でお届け先を確認できます。</div>
+          <div class="r purchase-actions"><a href="/member/login/" target="_blank" rel="noopener">公式ログイン・マイページ</a></div>
+          <b style="display:block;margin-top:8px">支払い方法</b>
+          <div class="desc">クレジットカードの登録は公式の注文手続きで行います。登録済みのカードも、利用できる場合は公式の支払い画面から選べます。</div>
+          <div class="r purchase-actions"><a href="/cart/" target="_blank" rel="noopener">公式カートを開く</a></div>
+        </div>
+        <div class="r btns"><button type="button" class="main" data-schedule>発売時刻に予約・自動スタート</button><button type="button" data-now>すぐ実行</button><button type="button" data-stop disabled>停止</button><button type="button" data-log-toggle aria-expanded="false" aria-controls="and-st-log">ログを見る</button></div>
+        <div id="and-st-log" data-log-panel hidden><div class="r"><button type="button" data-log-clear>ログ消去</button><button type="button" data-log-copy>ログをコピー</button><span class="desc" data-log-note>日本時間</span></div><pre id="sxblog" data-log></pre></div>
+        <div class="r"><a data-cart href="/cart/" hidden>公式カートを開く</a></div>
+      </div>`;
+    shadow.append(panel);
+    document.body.append(host);
     const field = name => panel.querySelector('[data-' + name + ']');
-    const status = message => { field('status').textContent = message; };
-    let task;
-    try { task = JSON.parse(sessionStorage.getItem(key) || 'null'); } catch {}
+    const read = (name, fallback) => {
+      try { return JSON.parse(sessionStorage.getItem(name)) ?? fallback; } catch { return fallback; }
+    };
+    const write = (name, value) => { try { sessionStorage.setItem(name, JSON.stringify(value)); } catch {} };
+    const logKey = 'uzura-and-st-log-v1';
+    const uiKey = 'uzura-and-st-ui-v1';
+    const ui = read(uiKey, { top: true, hidden: false });
+    const log = read(logKey, []);
+    const clock = new Intl.DateTimeFormat('ja-JP', {
+      timeZone: 'Asia/Tokyo', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+    });
+    const renderLog = () => { field('log').textContent = log.map(entry => entry.line).join('\n') || 'ログはまだありません。'; };
+    function status(message) {
+      field('status').textContent = message;
+      if (log.at(-1)?.message === message) return;
+      log.push({ message, line: clock.format(new Date()) + ' ' + message });
+      if (log.length > 60) log.shift();
+      write(logKey, log);
+      if (!field('log-panel').hidden) renderLog();
+    }
+    function applyUi() {
+      panel.className = ui.top ? 'top' : 'bot';
+      field('body').hidden = ui.hidden;
+      field('collapse').textContent = ui.hidden ? '表示' : '隠す';
+      field('collapse').setAttribute('aria-expanded', String(!ui.hidden));
+      write(uiKey, ui);
+    }
+    function toggle(button, target) {
+      target.hidden = !target.hidden;
+      button.setAttribute('aria-expanded', String(!target.hidden));
+    }
+    field('position').onclick = () => { ui.top = !ui.top; applyUi(); };
+    field('collapse').onclick = () => { ui.hidden = !ui.hidden; applyUi(); };
+    field('purchase').onclick = () => toggle(field('purchase'), field('purchase-panel'));
+    field('log-toggle').onclick = () => {
+      toggle(field('log-toggle'), field('log-panel'));
+      field('log-toggle').textContent = field('log-panel').hidden ? 'ログを見る' : 'ログを閉じる';
+      if (!field('log-panel').hidden) renderLog();
+    };
+    field('log-clear').onclick = () => { log.length = 0; write(logKey, log); renderLog(); };
+    field('log-copy').onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(log.map(entry => entry.line).join('\n'));
+        field('log-note').textContent = 'コピーしました';
+      } catch { field('log-note').textContent = 'コピーできません。ログを選択してコピーしてください。'; }
+    };
+    applyUi();
+    let task = read(key, null);
     const mountedAt = Date.now();
     let timer;
     let request;
@@ -860,10 +953,14 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
           try { match = await search(current, request.signal); }
           finally { clearTimeout(timeout); }
           if (task !== current) return;
-          if (!match) return again(run, Math.min(every, current.start + runLength - Date.now()));
+          if (!match) {
+            status('商品検索 · 一致なし。再確認します。');
+            return again(run, Math.min(every, current.start + runLength - Date.now()));
+          }
           if (Date.now() >= current.start + runLength) return finish('2分で終了しました。');
           current.url = match.href;
           persist();
+          status('商品を検出しました。商品詳細を開きます。');
         }
         const here = new URL(location.href);
         if (productId(here) !== productId(new URL(current.url))) {
@@ -872,7 +969,8 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
         }
         checkProduct();
       } catch (error) {
-        if (task === current) finish(error.name === 'AbortError' ? '検索がタイムアウトしました。' : error.message);
+        if (task === current) finish(error.name === 'AbortError' ? '検索がタイムアウトしました。'
+          : error instanceof SearchError ? error.message : '商品検索・カート処理でエラーが発生しました。');
       }
     }
 
@@ -890,13 +988,13 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
       persist();
       controls();
       field('cart').hidden = true;
+      status(scheduled ? '発売日時の予約を設定しました。' : 'すぐ実行を開始しました。');
       void run();
     }
     field('now').onclick = () => start(false);
     field('schedule').onclick = () => start(true);
     field('stop').onclick = () => finish('停止しました。');
     if (task) {
-      panel.open = true;
       field('query').value = task.query;
       field('color').value = task.color;
       field('size').value = task.size;
@@ -948,9 +1046,9 @@ window.__synovashop = true;
 const SYNOVA_WEBHOOK = ''; // Author's fixed notification destination disabled.
 const SYNOVA_LOGO_B64 = '';
 const SYNOVA_NAME = 'うずら BOT';
-const UZURA_RELEASE = '2.1.44.10936';
+const UZURA_RELEASE = '2.1.44.10937';
 const SYNOVA_VERSION = '1.9.8';
-const SYNOVA_ICON = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MCIgaGVpZ2h0PSI4MCIgdmlld0JveD0iMCAwIDgwIDgwIj48Y2lyY2xlIGN4PSI0MCIgY3k9IjQwIiByPSIzNiIgZmlsbD0iI2ZmZmZmZiIvPjx0ZXh0IHg9IjQwIiB5PSI1NSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1mYW1pbHk9IkFyaWFsLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iNDYiIGZvbnQtd2VpZ2h0PSJib2xkIiBmaWxsPSIjMTAyMTNiIj5VPC90ZXh0Pjwvc3ZnPg==";
+const SYNOVA_ICON = UZURA_SHOP_PANEL_ICON;
 const SYNOVA_TITLE = '';
 const ICON_TAG = `<img src="${SYNOVA_ICON}" alt="" style="width:40px;height:40px;flex:none;mix-blend-mode:screen">`;
 const TITLE_TAG = `<span style="font:900 20px/1.3 -apple-system,sans-serif;color:#ffffff">うずら BOT</span>`;
@@ -2009,36 +2107,7 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
   }
   box.innerHTML = `
 <style>
-#sxbbox,#sxbbox *{box-sizing:border-box;line-height:1.35;text-transform:none;letter-spacing:normal}
-#sxbbox button{width:auto;height:auto;min-height:0;min-width:0;max-width:none;display:inline-block;text-align:center;cursor:pointer}
-#sxbbox input,#sxbbox select{height:auto;min-height:0;max-width:none;width:auto;display:block}
-#sxbbox img{max-width:100%;border:0}
-#sxbbox{position:fixed;left:8px;right:8px;z-index:2147483647;background:#0d1b32;color:#f2f2f2;border:1px solid #527198;border-radius:16px;
-  box-shadow:0 6px 24px #000c;padding:10px 12px;font:13px -apple-system,"Hiragino Sans",sans-serif;text-align:left;letter-spacing:0;text-transform:none}
-#sxbbox.top{top:calc(env(safe-area-inset-top) + 6px)} #sxbbox.bot{bottom:calc(env(safe-area-inset-bottom) + 10px)}
-#sxbbox .hd{display:flex;gap:6px;align-items:center;font-weight:700}
-#sxbbox .hd button{padding:6px 7px;font-size:12px;white-space:nowrap;flex:none}
-#sxbbox .ttl{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;justify-content:center}
-#sxbbox .ver{font-size:10px;font-weight:600;color:#b7c8df;letter-spacing:.5px;margin-top:1px;line-height:1}
-#sxbbox button{border:1px solid #527198;background:#203a5d;color:#ffffff;border-radius:10px;padding:7px 10px;font-size:13px;font-weight:700;text-shadow:none;box-shadow:none;margin:0}
-#sxbbox .btns{flex-wrap:wrap} #sxbbox .btns button{flex:1;white-space:nowrap} #sxbbox .btns button.main{flex:1 1 100%}
-#sxbbox button.main{font-size:14px;padding:9px 10px;background:linear-gradient(180deg,#e8f0fc,#ffffff);color:#10213b;border:0;box-shadow:0 2px 10px #ffffff40}
-#sxbbox .r{display:flex;gap:6px;margin-top:6px;align-items:center}
-#sxbbox input{flex:1;min-width:0;font-size:16px;padding:6px 8px;border:1px solid #527198;border-radius:8px;background:#162a46;color:#fff;margin:0;height:auto}
-#sxbbox input.sz{flex:0 0 64px} #sxbbox .kw{border-top:1px solid #1f1d24;margin-top:6px} #sxbbox .kw .r{margin-top:4px}
-#sxbbox .sec{border:1px solid #385573;border-radius:10px;padding:4px 8px 8px;margin-top:8px} #sxbbox .sec b{color:#ffffff;font-size:12px}
-#sxbbox label.ck{display:flex;gap:8px;align-items:center;margin-top:6px;font-size:13px} #sxbbox label.ck input{flex:none;width:20px;height:20px;padding:0;border:0;background:none;-webkit-appearance:checkbox;appearance:auto;accent-color:#ffffff}
-#sxbbox input::placeholder{color:#a9bed8}
-#sxbbox input:focus,#sxbbox select:focus{outline:none;border-color:#ffffff;box-shadow:0 0 0 2px #ffffff40}
-#sxbbox select{-webkit-appearance:none;appearance:none;font-size:16px;padding:6px 22px 6px 10px;border-radius:8px;background:#162a46 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23ffffff' stroke-width='2' fill='none'/%3E%3C/svg%3E") no-repeat right 7px center;color:#fff;border:1px solid #527198;font-weight:700;margin:0;height:auto}
-#sxbbox input[type=time]{flex:0 0 auto;width:110px;color-scheme:dark}
-#sxbbox .lb{width:34px;font-size:11px;color:#ffffff;font-weight:700;flex:none}
-#sxbbox .desc{font-size:12px;color:#c2d1e5;margin-top:4px} #sxbbox .st{font-size:12px;color:#ffffff;font-weight:700;margin-top:3px}
-#sxbbox .body{max-height:calc(100vh - 160px);overflow-y:auto;-webkit-overflow-scrolling:touch}
-#sxbbox button:disabled{opacity:.35}
-#sxbbox button,#sxbbox input,#sxbbox select{font-family:-apple-system,"Hiragino Sans",sans-serif}
-#sxblog{display:block;max-height:220px;overflow:auto;white-space:pre-wrap;font:11px ui-monospace,monospace;background:#10213b;color:#cfdeef;border:1px solid #385573;border-radius:8px;padding:6px;margin-top:6px}
-</style>
+${UZURA_SHOP_PANEL_CSS}</style>
 <div class="hd">${ICON_TAG}<b class="ttl">${TITLE_TAG}<span class="ver">${SHOP} \u00b7 v${HOST === "jp.stussy.com" ? UZURA_RELEASE : SYNOVA_VERSION}</span></b><button id="sxbpos">${L('\u4e0a\u4e0b', 'L\u00ean/Xu\u1ed1ng')}</button><button id="sxbhide">${L('\u96a0\u3059', '\u1ea8n')}</button></div>
 <div class="st" id="sxbst">${st.active ? L('\u5f85\u6a5f\u4e2d', '\u0110ang ch\u1edd') : L('\u505c\u6b62\u4e2d', '\u0110ang t\u1eaft')}</div>
 <div class="body">
