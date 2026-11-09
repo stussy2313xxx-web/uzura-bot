@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         うずら BOT — Mellojoy・Shop対応
 // @namespace    uzura.mellojoy.shop
-// @version      2.1.44.10934
+// @version      2.1.44.10936
 // @updateURL    https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.meta.js
 // @downloadURL  https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.user.js
-// @description  Mellojoy・Shopify・Supreme・HUMAN MADE・Buffer・Palaceの購入補助。購入成功時のDiscord通知に対応。
+// @description  Mellojoy・Shopify・Supreme・HUMAN MADE・Buffer・Palace・and STの購入補助。購入成功時のDiscord通知に対応。
 // @match        https://*/*
 // @run-at       document-start
 // @grant        GM.getValue
@@ -696,6 +696,218 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
   else boot();
 })();
 
+// and ST uses the official product picker and its existing cart handler.
+(function uzuraAndSt() {
+  'use strict';
+  const origin = 'https://www.dot-st.com';
+  if (window.top !== window || location.origin !== origin || /^\/(?:cart|checkout|order|login|member)(?:\/|$)/.test(location.pathname)) return;
+
+  const key = 'uzura-and-st-run-v1';
+  const every = 5000;
+  const runLength = 120000;
+  const clean = value => String(value ?? '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase();
+  const productId = url => /^\/(?:[a-z0-9_-]+\/)?disp\/item\/([0-9]+)\/?$/i.exec(url.pathname)?.[1];
+  const urlFor = value => {
+    try {
+      const url = new URL(value, origin);
+      if (url.origin === origin && productId(url)) {
+        url.search = '';
+        url.hash = '';
+        return url;
+      }
+    } catch {}
+    return null;
+  };
+  const visible = element => element && element.getClientRects().length && getComputedStyle(element).visibility !== 'hidden';
+
+  async function search(task, signal) {
+    const url = new URL('/disp/itemlist/', origin);
+    url.searchParams.set('q', task.query.normalize('NFKC'));
+    const response = await fetch(url, { cache: 'no-store', signal });
+    if (!response.ok) throw new Error('商品検索を停止しました（HTTP ' + response.status + '）');
+    if (new URL(response.url).pathname !== url.pathname) throw new Error('公式ストアの商品検索画面を開いてください。');
+    const doc = new DOMParser().parseFromString(await response.text(), 'text/html');
+    if (!doc.querySelector('form[action="/disp/itemlist/"]')) throw new Error('公式ストアの検索結果を確認できません。');
+    const matches = new Map();
+    const query = clean(task.query);
+    const byCode = /^\d+$/.test(query);
+    for (const title of doc.querySelectorAll('.item-list-content__item a[href] .item-name')) {
+      const item = urlFor(title.closest('a').getAttribute('href'));
+      const name = clean(title.textContent);
+      if (item && (byCode ? productId(item) === query : name.includes(query))) {
+        matches.set(productId(item), { item, exact: byCode || name === query });
+      }
+    }
+    const exact = [...matches.values()].filter(match => match.exact);
+    const candidates = exact.length ? exact : [...matches.values()];
+    if (candidates.length > 1) throw new Error('複数の商品が一致しました。品番か商品URLを指定してください。');
+    return candidates[0]?.item ?? null;
+  }
+
+  function mount() {
+    if (document.getElementById('uzura-and-st')) return;
+    const panel = document.createElement('details');
+    panel.id = 'uzura-and-st';
+    panel.innerHTML = `
+      <style>
+      #uzura-and-st{position:fixed;bottom:max(16px,env(safe-area-inset-bottom));right:12px;z-index:2147483646;
+        box-sizing:border-box;width:min(360px,calc(100% - 24px));max-height:75vh;overflow:auto;padding:12px;
+        background:#101f36;color:#fff;border:1px solid #496688;border-radius:14px;
+        box-shadow:0 4px 16px #0004;font:15px/1.45 system-ui,sans-serif;color-scheme:dark}
+      #uzura-and-st summary{cursor:pointer;font-weight:700}
+      #uzura-and-st label{display:block;margin-top:8px}
+      #uzura-and-st input,#uzura-and-st button{box-sizing:border-box;padding:6px 8px;
+        min-height:35px;border:1px solid #6c89a7;border-radius:6px;font:inherit}
+      #uzura-and-st input{width:100%;background:#1c324f;color:#fff}
+      #uzura-and-st input::placeholder{color:#c6d6e8;opacity:1}
+      #uzura-and-st button{margin:8px 4px 0 0;background:#f3f7fc;color:#10213b;cursor:pointer}
+      #uzura-and-st button:disabled{opacity:.55;cursor:default}
+      #uzura-and-st p{margin:8px 0 0} #uzura-and-st a{color:#fff;text-decoration:underline}
+      </style>
+      <summary>うずら BOT · and ST</summary>
+      <label>商品名・品番・商品URL<input data-query type="text" placeholder="商品詳細を開いている場合は空欄でOK"></label>
+      <label>色（ショップ表記）<input data-color type="text" placeholder="例 ブラック"></label>
+      <label>サイズ（ショップ表記）<input data-size type="text" placeholder="例 M"></label>
+      <label>発売日時（日本時間）<input data-time type="datetime-local"></label>
+      <button type="button" data-now>すぐ実行</button><button type="button" data-schedule>予約</button><button type="button" data-stop disabled>停止</button>
+      <p data-status role="status">色・サイズが複数ある場合は指定してください。通常販売の商品を1点カートに入れます。</p>
+      <a data-cart href="/cart/" hidden>公式カートを開く</a>`;
+    document.body.append(panel);
+    const field = name => panel.querySelector('[data-' + name + ']');
+    const status = message => { field('status').textContent = message; };
+    let task;
+    try { task = JSON.parse(sessionStorage.getItem(key) || 'null'); } catch {}
+    const mountedAt = Date.now();
+    let timer;
+    let request;
+
+    const persist = () => task ? sessionStorage.setItem(key, JSON.stringify(task)) : sessionStorage.removeItem(key);
+    function controls() {
+      field('now').disabled = field('schedule').disabled = !!task;
+      field('stop').disabled = !task || !!task.submittedAt;
+    }
+    function finish(message, showCart = false) {
+      clearTimeout(timer);
+      request?.abort();
+      task = null;
+      persist();
+      controls();
+      status(message);
+      field('cart').hidden = !showCart;
+    }
+    function again(callback, time) {
+      clearTimeout(timer);
+      timer = setTimeout(callback, Math.max(0, time));
+    }
+    function confirmCart() {
+      if (visible(document.getElementById('modal-cart-in'))) {
+        finish('カートに1点追加されました。', true);
+      } else if (visible(document.getElementById('modal-cart-error'))) {
+        finish('ショップがカート追加を受け付けませんでした。商品ページをご確認ください。');
+      } else if (Date.now() - task.submittedAt >= 15000) {
+        finish('追加結果を確認できません。重複を避けるため、公式カートを確認してください。', true);
+      } else {
+        again(confirmCart, 200);
+      }
+    }
+    function checkProduct() {
+      const now = Date.now();
+      const deadline = task.start + runLength;
+      if (now >= deadline) return finish('2分で終了しました。指定の色・サイズで在庫を確認できませんでした。');
+      const modal = document.getElementById('modal-cart-favorite');
+      const rows = [...(modal?.querySelectorAll('.modal-cart-favorite__item-list > li') || [])];
+      if (!rows.length && now < mountedAt + every) {
+        status('商品ページの色・サイズを読み込んでいます。');
+        return again(checkProduct, Math.min(250, deadline - now));
+      }
+      const variants = rows.map(row => ({
+        color: clean(row.closest('.modal-cart-favorite__item')?.querySelector('dt')?.textContent),
+        size: clean(row.querySelector('.modal-cart-favorite__item-list__l__size')?.textContent).replace(/^サイズ\s*:\s*/, ''),
+        button: row.querySelector('button.modal-cart-favorite__cart-btn[data-index]')
+      }));
+      const matches = variants.filter(variant => (!task.color || task.color === variant.color) && (!task.size || task.size === variant.size));
+      if (matches.length > 1) return finish('色・サイズが複数一致しました。公式の商品ページに表示される表記で絞り込んでください。');
+      const button = matches[0]?.button;
+      if (button && !button.disabled && !visible(document.getElementById('modal-cart-in')) &&
+          !visible(document.getElementById('modal-cart-error'))) {
+        task.submittedAt = Date.now();
+        persist();
+        controls();
+        status('カート追加の結果を確認しています。');
+        button.click();
+        confirmCart();
+        return;
+      }
+      status('指定の色・サイズでカートに入れられる在庫を確認しています。');
+      const untilEnd = deadline - Date.now();
+      again(every < untilEnd ? () => location.reload() : checkProduct, Math.min(every, untilEnd));
+    }
+    async function run() {
+      const current = task;
+      if (current.submittedAt) return confirmCart();
+      const now = Date.now();
+      if (now < current.start) {
+        status('予約済みです。このタブを開いたままにしてください。');
+        return again(run, Math.min(current.start - now, 2147483647));
+      }
+      if (now >= current.start + runLength) return finish('2分で終了しました。対象商品・在庫を確認できませんでした。');
+      try {
+        if (!current.url) {
+          status('公式の商品検索で対象を探しています。');
+          request = new AbortController();
+          const timeout = setTimeout(() => request.abort(), Math.min(10000, current.start + runLength - now));
+          let match;
+          try { match = await search(current, request.signal); }
+          finally { clearTimeout(timeout); }
+          if (task !== current) return;
+          if (!match) return again(run, Math.min(every, current.start + runLength - Date.now()));
+          if (Date.now() >= current.start + runLength) return finish('2分で終了しました。');
+          current.url = match.href;
+          persist();
+        }
+        const here = new URL(location.href);
+        if (productId(here) !== productId(new URL(current.url))) {
+          location.assign(current.url);
+          return;
+        }
+        checkProduct();
+      } catch (error) {
+        if (task === current) finish(error.name === 'AbortError' ? '検索がタイムアウトしました。' : error.message);
+      }
+    }
+
+    function start(scheduled) {
+      const query = field('query').value.trim();
+      const item = urlFor(query || location.href);
+      if (!item && (/^(?:https?:|\/)/i.test(query) || clean(query).length < 3)) {
+        return status('and STの商品名（3文字以上）・品番・商品URLを入力してください。');
+      }
+      const startAt = scheduled ? Date.parse(field('time').value + ':00+09:00') : Date.now();
+      if (scheduled && (!Number.isFinite(startAt) || startAt <= Date.now())) {
+        return status('これからの発売日時を日本時間で指定してください。');
+      }
+      task = { query, url: item?.href, color: clean(field('color').value), size: clean(field('size').value), start: startAt };
+      persist();
+      controls();
+      field('cart').hidden = true;
+      void run();
+    }
+    field('now').onclick = () => start(false);
+    field('schedule').onclick = () => start(true);
+    field('stop').onclick = () => finish('停止しました。');
+    if (task) {
+      panel.open = true;
+      field('query').value = task.query;
+      field('color').value = task.color;
+      field('size').value = task.size;
+      controls();
+      void run();
+    }
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount, { once: true });
+  else mount();
+}());
+
 // Customized for うずら from SYNOVAJOY; original functionality and author attribution retained.
 // ===== Ban GOP (thu nghiem): Mellojoy BOT 2.1.43 + SYNOVA Shop BOT 1.9.8 =====
 (function () {
@@ -721,7 +933,7 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
   }
   // ---- BOT Shop: nhu ban rieng (document-end) ----
   var runShop = function () {
-    if (/^(?:(?:test|www)\.)?valladstudio\.com$/i.test(location.hostname)) return;
+    if (location.hostname === "www.dot-st.com" || /^(?:(?:test|www)\.)?valladstudio\.com$/i.test(location.hostname)) return;
 
 // (kh\u00f4ng c\u00f3 @noframes: \u00f4 s\u1ed1 th\u1ebb c\u1ee7a Shopify n\u1eb1m trong khung checkout.pci.shopifyinc.com -> script ph\u1ea3i ch\u1ea1y trong khung \u0111\u00f3)
 
@@ -736,7 +948,7 @@ window.__synovashop = true;
 const SYNOVA_WEBHOOK = ''; // Author's fixed notification destination disabled.
 const SYNOVA_LOGO_B64 = '';
 const SYNOVA_NAME = 'うずら BOT';
-const UZURA_RELEASE = '2.1.44.10934';
+const UZURA_RELEASE = '2.1.44.10936';
 const SYNOVA_VERSION = '1.9.8';
 const SYNOVA_ICON = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MCIgaGVpZ2h0PSI4MCIgdmlld0JveD0iMCAwIDgwIDgwIj48Y2lyY2xlIGN4PSI0MCIgY3k9IjQwIiByPSIzNiIgZmlsbD0iI2ZmZmZmZiIvPjx0ZXh0IHg9IjQwIiB5PSI1NSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1mYW1pbHk9IkFyaWFsLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iNDYiIGZvbnQtd2VpZ2h0PSJib2xkIiBmaWxsPSIjMTAyMTNiIj5VPC90ZXh0Pjwvc3ZnPg==";
 const SYNOVA_TITLE = '';
