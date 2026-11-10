@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          うずら BOT Android — ショップ・購入通知
 // @namespace     uzura.bot.android.shops
-// @version       2.1.44.10939
+// @version       2.1.44.10940
 // @description   Android版。Shopify、Supreme、HUMAN MADE、Buffer、Palace、and STなどの購入補助とDiscord購入通知。
 // @match         https://*/*
 // @run-at        document-start
@@ -21,11 +21,11 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
 // Purchase-success webhook settings shared through Userscripts GM storage.
 (async function uzuraDiscord() {
   'use strict';
-  if (window.top !== window || (!UZURA_CURRENT && !/(^|\.)(?:mellojoy(?:lucky\.cn|japan\.com|us\.com)|shop\.app|supreme\.com|humanmade\.jp|buffering\.jp)$|^(?:checkout\.)?jp\.palaceskateboards\.com$/i.test(location.hostname))) return;
+  const dedicated = ['test.valladstudio.com', 'www.dot-st.com'].includes(location.hostname);
+  if (window.top !== window || (!dedicated && !UZURA_CURRENT && !/(^|\.)(?:mellojoy(?:lucky\.cn|japan\.com|us\.com)|shop\.app|supreme\.com|humanmade\.jp|buffering\.jp)$|^(?:checkout\.)?jp\.palaceskateboards\.com$/i.test(location.hostname))) return;
   const VALID = /^https:\/\/discord\.com\/api\/webhooks\/\d+\/[\w-]+$/;
-  const FIXED_WEBHOOK = ''; // Use the notification destination saved in the script manager. // Administrator inserts the shared destination here once.
-  // Initial distribution saves the shared destination once; public updates use GM storage.
-  if (VALID.test(FIXED_WEBHOOK)) await GM.setValue('uzura_notify_hook', FIXED_WEBHOOK);
+  const MONEY_LAB_GUILD = '1556313614053408889';
+  const MONEY_LAB_CHANNEL = '1556317116473544856';
   const load = (k,d) => GM.getValue('uzura_notify_'+k,d);
   const save = (k,v) => GM.setValue('uzura_notify_'+k,v);
   let active = await load('enabled',true), hook = await load('hook','');
@@ -43,27 +43,28 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
     queue=queue.then(async()=>{
       active=await load('enabled',true);hook=await load('hook','');
       if(!active || !VALID.test(hook) || !Array.isArray(data.embeds)) return;
-      const embeds=data.embeds.filter(x=>/Checkout Successful/.test(x.author||'')).slice(0,10).map(x=>({
+      const lottery = /(^|\.)mellojoylucky\.cn$/i.test(location.hostname);
+      const embeds=data.embeds.filter(x=>lottery ? /Lottery Won/.test(x.author||'') : /Checkout Successful/.test(x.author||'')).slice(0,10).map(x=>({
         title:String(x.title||'購入成功').slice(0,250),color:0x2ecc71,
-        author:{name:'購入成功'},url:stripUrl(x.url),thumbnail:stripUrl(x.thumb)?{url:stripUrl(x.thumb)}:undefined,
-        fields:(x.fields||[]).filter(f=>/^(Size|Quantity|Site|価格|サイズ|数量|Order|注文番号)$/i.test(f[0]) && f[1]!=null && f[1]!=='').map(f=>({name:String(f[0]),value:String(f[1]).slice(0,1000),inline:true})),
+        author:{name:lottery ? '入店抽選 当選' : '購入成功'},url:stripUrl(x.url),thumbnail:stripUrl(x.thumb)?{url:stripUrl(x.thumb)}:undefined,
+        fields:(x.fields||[]).filter(f=>/^(Size|Quantity|Site|価格|サイズ|数量|来店日|時間|Order|注文番号)$/i.test(f[0]) && f[1]!=null && f[1]!=='').map(f=>({name:String(f[0]),value:String(f[1]).slice(0,1000),inline:true})),
         timestamp:new Date().toISOString(),footer:{text:'うずら BOT'}
       }));
       if(!embeds.length || /komoju\.com$/.test(location.hostname)) return;
-      const order=embeds.flatMap(x=>x.fields).find(f=>/^(Order|注文番号)$/i.test(f.name))?.value;
-      const id=location.hostname+':'+(order || location.pathname);
+      const order = (/^[A-Z0-9-]{4,64}$/i.test(String(data.order || '')) && data.order) || embeds.flatMap(x=>x.fields).find(f=>/^(Order|注文番号)$/i.test(f.name))?.value;
+      const appointment = lottery && embeds[0].fields.filter(field => /^(来店日|時間)$/.test(field.name)).map(field => field.value).join(' ');
+      const id=location.hostname+':'+(order || appointment || location.pathname);
       embeds.forEach(e => { e.fields = e.fields.filter(f => !/^(Order|注文番号)$/i.test(f.name)); }); // Order ID is used only locally for deduplication.
       const sent=await load('sent',{});
       if(sent[id]) return;
       try {
         await request({username:'うずら BOT',allowed_mentions:{parse:[]},embeds});
-        sent[id]=Date.now();await save('sent',Object.fromEntries(Object.entries(sent).slice(-100)));say('購入成功の通知を送信しました。');
+        sent[id]=Date.now();await save('sent',Object.fromEntries(Object.entries(sent).slice(-100)));say(lottery ? '入店抽選の当選通知を送信しました。' : '購入成功の通知を送信しました。');
       } catch(err){say(err.message+'。送信先や通信状況を管理者に確認してください。');pending={id,embeds};}
     }).catch(()=>{});
   });
   let pending=null, info;
   const say=t=>{console.info('[うずら BOT 通知]',t);};
-  // Notification switch only; the shared destination cannot be edited here.
   function mountToggle() {
     const button=document.createElement('button');
     button.id='uzura-discord-toggle';
@@ -71,14 +72,96 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
     const paint=()=>{button.textContent=active?'🔔 購入通知 ON':'🔕 購入通知 OFF';button.setAttribute('aria-pressed',String(active));};
     paint();
     button.onclick=async()=>{active=!(await load('enabled',true));await save('enabled',active);paint();};
-    document.body.append(button);
+    const controls = document.createElement('div');
+    controls.style.cssText = button.style.cssText;
+    controls.style.display = 'flex';
+    controls.style.gap = '6px';
+    controls.style.padding = '5px';
+    button.style.cssText = 'font:inherit;color:inherit;background:none;border:0;cursor:pointer';
+    const settings = document.createElement('button');
+    settings.type = 'button';
+    settings.textContent = 'MONEY LAB 設定';
+    settings.style.cssText = button.style.cssText;
+    settings.onclick = async event => {
+      if (!event.isTrusted || settings.disabled) return;
+      const next = window.prompt('MONEY LABの新しいWebhook URLを入力してください')?.trim();
+      if (!next) return;
+      if (!VALID.test(next)) { window.alert('DiscordのWebhook URLを確認してください。'); return; }
+      settings.disabled = true;
+      try {
+        const target = await new Promise((resolve, reject) => {
+          GM.xmlHttpRequest({
+            method: 'GET', url: next, timeout: 10000,
+            onload: response => {
+              if (response.status !== 200) { reject(new Error('Webhookを確認できませんでした。HTTP ' + response.status)); return; }
+              try { resolve(JSON.parse(response.responseText)); }
+              catch { reject(new Error('Discordの応答を確認できませんでした。')); }
+            },
+            onerror: () => reject(new Error('Discordに接続できませんでした。')),
+            ontimeout: () => reject(new Error('Discordへの接続がタイムアウトしました。')),
+          });
+        });
+        if (target?.guild_id !== MONEY_LAB_GUILD || target.channel_id !== MONEY_LAB_CHANNEL) {
+          throw new Error('指定のMONEY LABチャンネルに紐づくWebhookを入力してください。');
+        }
+        await save('hook', next);
+        window.alert('MONEY LABの購入成功通知先を保存しました。');
+      } catch (error) {
+        window.alert(error.message || 'Webhookを保存できませんでした。');
+      } finally {
+        settings.disabled = false;
+      }
+    };
+    controls.append(button, settings);
+    document.body.append(controls);
   }
   if(document.body)mountToggle();else document.addEventListener('DOMContentLoaded',mountToggle,{once:true});
-  // No per-user Webhook settings or notification button.
-  // Existing saved destination works until administrator embeds FIXED_WEBHOOK.
 })();
 
 
+// These two storefronts use independent checkouts. Require a completed receipt.
+(function uzuraDedicatedReceipt() {
+  const vallad = location.hostname === 'test.valladstudio.com';
+  const andSt = location.hostname === 'www.dot-st.com';
+  if (window.top !== window || (!vallad && !andSt)) return;
+
+  function readReceipt() {
+    if (vallad) {
+      const raw = Array.from(document.scripts, script =>
+        /^\s*(?:var Colorme|window\.Colorme)\s*=\s*(\{[^\n]*\})\s*;\s*$/m.exec(script.textContent)?.[1]).find(Boolean);
+      let colorme;
+      try { colorme = raw ? JSON.parse(raw) : window.Colorme; } catch { return null; }
+      if (!['checkout-complete', 'regi_step5'].includes(colorme?.page) ||
+          colorme.shop?.account_id !== 'PA01524832' || !/^\d+$/.test(String(colorme.sale?.id))) return null;
+      return {
+        order: String(colorme.sale.id),
+        embeds: (Array.isArray(colorme.sale.items) ? colorme.sale.items : []).slice(0, 10).map(item => ({
+          author: 'Checkout Successful', title: item.name || 'VALLAD STUDIO',
+          fields: [['価格', item.price], ['数量', item.quantity], ['Site', 'VALLAD STUDIO']],
+        })),
+      };
+    }
+
+    if (!/(?:^|\/)(?:checkout|order|purchase)(?:[-_/]|$)/i.test(location.pathname)) return null;
+    const complete = [...document.querySelectorAll('h1,h2,[role="heading"]')].some(element =>
+      /^(?:ご?注文(?:が)?完了(?:しました)?|ご注文ありがとうございます)[。！!\s]*$/.test(element.innerText?.trim() || ''));
+    if (!complete) return null;
+    const order = /(?:ご?注文番号|オーダー番号)\s*[:：#＃]?\s*([A-Z0-9][A-Z0-9-]{3,})/i.exec(document.body?.innerText || '')?.[1];
+    return order ? { order, embeds: [] } : null;
+  }
+
+  let checks = 0;
+  const timer = setInterval(() => {
+    const receipt = readReceipt();
+    if (!receipt) { if (++checks >= 120) clearInterval(timer); return; }
+    clearInterval(timer);
+    if (!receipt.embeds.length) {
+      const title = vallad ? 'VALLAD STUDIO' : 'and ST';
+      receipt.embeds.push({ author: 'Checkout Successful', title, fields: [['Site', title]] });
+    }
+    window.dispatchEvent(new CustomEvent('uzura-purchase-success', { detail: JSON.stringify(receipt) }));
+  }, 750);
+})();
 
 (function uzuraValladCheckout() {
   'use strict';
@@ -1075,7 +1158,7 @@ window.__synovashop = true;
 const SYNOVA_WEBHOOK = ''; // Author's fixed notification destination disabled.
 const SYNOVA_LOGO_B64 = '';
 const SYNOVA_NAME = 'うずら BOT';
-const UZURA_RELEASE = '2.1.44.10939';
+const UZURA_RELEASE = '2.1.44.10940';
 const SYNOVA_VERSION = '1.9.8';
 const SYNOVA_ICON = UZURA_SHOP_PANEL_ICON;
 const SYNOVA_TITLE = '';
@@ -1102,7 +1185,8 @@ function synovaPageImg() {
   } catch (e) { return ''; }
 }
 function synovaNotify(embeds, extra, priv) {
-  window.dispatchEvent(new CustomEvent('uzura-purchase-success', {detail:JSON.stringify({embeds})}));
+  const order = (priv || []).find(([name]) => name === '注文番号')?.[1];
+  window.dispatchEvent(new CustomEvent('uzura-purchase-success', {detail:JSON.stringify({embeds, order})}));
   return; // Purchase-success only; old notification destinations are disabled.
   if (HOOK_RE.test(SYNOVA_WEBHOOK)) synovaPost(SYNOVA_WEBHOOK, embeds);
   if (extra && HOOK_RE.test(extra.trim())) {
@@ -2597,7 +2681,7 @@ if (!SYNOVA_DUP && !IN_FRAME && (IS_HM || IS_BUF) && /\/checkout/i.test(location
   function geDone(orderNo) {
     if (sent) return;
     sent = true;
-    try { if (localStorage.getItem('synova_sent_ge_' + (last && last.at))) return; localStorage.setItem('synova_sent_ge_' + (last && last.at), '1'); } catch (e) {}
+    try { if (localStorage.getItem('synova_sent_ge_' + (orderNo || last?.at || location.pathname))) return; localStorage.setItem('synova_sent_ge_' + (orderNo || last?.at || location.pathname), '1'); } catch (e) {}
     synovaNotify(orderEmbeds(last), buyInfo().uwh, [['Email', geEmail || emailUsed()], ['\u6ce8\u6587\u756a\u53f7', orderNo]]);
     try {
       localStorage.removeItem(K_LAST);
@@ -3002,12 +3086,11 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && (IS_PAL || IS_SUP || IS_HM || IS_BUF 
     const orderNo = findOrderNo(text) || findOrderNo(document.title);
     if (!orderNo && tries < 12) return;              // m\u00e3 \u0111\u01a1n th\u01b0\u1eddng hi\u1ec7n sau v\u00e0i gi\u00e2y -> ch\u1edd t\u1ed1i \u0111a ~12 gi\u00e2y
     clearInterval(timer);
-    const key = 'synova_sent_' + location.pathname;
+    const key = 'synova_sent_' + (orderNo || location.pathname);
     try { if (localStorage.getItem(key)) return; localStorage.setItem(key, '1'); } catch (e) {}
     let last = null;
     try { last = JSON.parse(localStorage.getItem(K_LAST)); } catch (e) {}
-    // t\u1eeb trang KOMOJU quay v\u1ec1 (\u30b3\u30f3\u30d3\u30cb / \u9280\u884c\u632f\u8fbc): KOMOJU \u0111\u00e3 b\u00e1o Discord l\u00fac b\u1ea5m \u652f\u6255\u3044 -> kh\u00f4ng b\u00e1o l\u1ea7n 2
-    if (!/komoju\.com/i.test(document.referrer || '')) synovaNotify(orderEmbeds(last), buyInfo().uwh, [['Email', emailUsed()], ['\u6ce8\u6587\u756a\u53f7', orderNo]]);
+    synovaNotify(orderEmbeds(last), buyInfo().uwh, [['Email', emailUsed()], ['\u6ce8\u6587\u756a\u53f7', orderNo]]);
     try { localStorage.removeItem(K_LAST); localStorage.removeItem(K_CART); localStorage.removeItem('sxb_pay_used'); } catch (e) {}
     try {                                            // \u0111\u1eb7t h\u00e0ng xong: BOT c\u1ee7a shop n\u00e0y ch\u1eafc ch\u1eafn \u1edf tr\u1ea1ng th\u00e1i t\u1eaft
       const k = 'sxb_' + SITE_KEY + '_st';

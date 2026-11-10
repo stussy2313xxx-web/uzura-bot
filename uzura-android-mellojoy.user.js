@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          うずら BOT Android — メロジョイ
 // @namespace     uzura.bot.android.mellojoy
-// @version       2.1.44.10938
+// @version       2.1.44.10940
 // @description   Android版。メロジョイの購入・入店抽選。
 // @match         https://*.mellojoylucky.cn/*
 // @match         https://*.mellojoyjapan.com/*
@@ -502,7 +502,7 @@ if (!SYNOVA_DUP && /mellojoylucky\.cn$/.test(location.hostname)) (function () {
       if (!isCurrentRun(runAt)) return regPosted ? unknownRegistration() : stoppedBeforeSubmit();
       if (!r || !r.status) {
         const tt = toastText();
-        if (/\u5f53\u9078\u304a\u3081\u3067\u3068\u3046|\u3059\u3067\u306b\u53d6\u5f97\u6e08\u307f/.test(tt)) return { kind: 'won', note: tt.slice(0, 40) };
+        if (/\u5f53\u9078\u304a\u3081\u3067\u3068\u3046|\u3059\u3067\u306b\u53d6\u5f97\u6e08\u307f/.test(tt)) return { kind: 'won', note: tt.slice(0, 40), freshWin: regPosted && /\u5f53\u9078\u304a\u3081\u3067\u3068\u3046/.test(tt) && !/\u3059\u3067\u306b\u53d6\u5f97\u6e08\u307f/.test(tt) };
         if (/\u5b9a\u54e1\u306b\u9054\u3057\u307e\u3057\u305f/.test(tt)) return { kind: 'lose', note: L('\u5b9a\u54e1\u306b\u9054\u3057\u307e\u3057\u305f', '\u0111\u00e3 \u0111\u1ee7 ng\u01b0\u1eddi') };
         // trang CH\u01afA g\u1eedi \u0111\u0103ng k\u00fd: kh\u00f4ng t\u00ednh v\u00e0o l\u01b0\u1ee3t g\u1eedi. Kh\u00f4ng c\u00f3 key th\u00ec khung sau c\u0169ng v\u1eady -> d\u1eebng v\u00e0 b\u00e1o r\u00f5
         if (!regPosted && !capKey()) return { kind: 'stop', notSent: true, note: L('\u9001\u4fe1\u3067\u304d\u307e\u305b\u3093: Cloudflare \u8a8d\u8a3c\u5f85\u3061\uff08\u30c1\u30a7\u30c3\u30af\u3092\u30bf\u30c3\u30d7 or CapSolver \u30ad\u30fc\u3092\u5165\u529b\uff09', 'ch\u01b0a g\u1eedi \u0111\u01b0\u1ee3c: Cloudflare \u0111ang ch\u1edd x\u00e1c nh\u1eadn (b\u1ea5m \u00f4 x\u00e1c nh\u1eadn ho\u1eb7c nh\u1eadp key CapSolver)') };
@@ -523,7 +523,7 @@ if (!SYNOVA_DUP && /mellojoylucky\.cn$/.test(location.hostname)) (function () {
     const d = r.data || {};
     const res = String(d.result || '').toLowerCase();
     const code = String(d.code || '');
-    if (res === 'won' || res === 'already_won') return { kind: 'won', note: res };
+    if (res === 'won' || res === 'already_won') return { kind: 'won', note: res, freshWin: res === 'won' && r.status >= 200 && r.status < 300 };
     if (res) return { kind: 'lose', note: res };
     // c\u00f3 CapSolver: token b\u1ecb t\u1eeb ch\u1ed1i -> t\u1eeb gi\u1edd lu\u00f4n d\u00f9ng token CapSolver, th\u1eed khung k\u1ebf thay v\u00ec d\u1eebng
     if (code === 'TURNSTILE_INVALID' && capKey() && !forceCap) { forceCap = true; pageTok = null; return { kind: 'error', note: code + L(' \u2192 \u6b21\u304b\u3089 CapSolver', ' \u2192 t\u1eeb l\u01b0\u1ee3t sau d\u00f9ng CapSolver') }; }
@@ -613,8 +613,8 @@ if (!SYNOVA_DUP && /mellojoylucky\.cn$/.test(location.hostname)) (function () {
         if (r.lost) { log(L(`${md} ${t} \u2192 \u6b21\u306e\u6642\u9593\u5e2f: ${r.note}`, `${md} ${t} \u2192 sang khung k\u1ebf: ${r.note}`)); await sleep(GAP_MS); }
         if (r.kind === 'won') {
           finish(L(`\ud83c\udf89 \u5f53\u9078\uff01 ${md} ${t}`, `\ud83c\udf89 TR\u00daNG V\u00c9! ${md} ${t}`)); beep(3);
-          synovaNotify([{ author: '\u2705 Lottery Won', title: `MelloJoy \u5165\u5834\u5238 ${md} ${t}`, url: location.origin + '/register',
-            fields: [['\u6765\u5e97\u65e5', md], ['\u6642\u9593', t], ['Site', location.hostname, false]] }]);
+          if (r.freshWin) synovaNotify([{ author: '\u2705 Lottery Won', title: `MelloJoy \u5165\u5834\u5238 ${md} ${t}`, url: location.origin + '/register',
+            fields: [['\u6765\u5e97\u65e5', date], ['\u6642\u9593', t], ['Site', location.hostname, false]] }]);
           if (rq) setTimeout(() => { location.href = '/my-tickets'; }, 1500);   // m\u1edf trang v\u00e9 \u0111\u1ec3 xem v\u00e9 v\u1eeba tr\u00fang
           return;
         }
