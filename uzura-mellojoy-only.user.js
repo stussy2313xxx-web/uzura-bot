@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          うずら BOT — メロジョイ専用
 // @namespace     uzura.bot.mellojoy.only
-// @version       2.1.44.10938
+// @version       2.1.44.10942
 // @description   メロジョイUS・JPの購入と、ポップアップの入店抽選に対応。
 // @match         https://*.mellojoylucky.cn/*
 // @match         https://*.mellojoyjapan.com/*
@@ -450,6 +450,17 @@ if (!SYNOVA_DUP && /mellojoylucky\.cn$/.test(location.hostname)) (function () {
     const re = new RegExp('(^|[^0-9/])' + m + '/' + d + '(?![0-9])');
     return btns().find((b) => re.test(txt(b)));
   }
+  function isDateSelected(date) {
+    const tab = findDateTab(date);
+    return !!tab && (
+      tab.getAttribute('aria-selected') === 'true' ||
+      tab.getAttribute('aria-pressed') === 'true' ||
+      tab.classList.contains('border-[#fe198a]')
+    );
+  }
+  function dateSlotsReady(date) {
+    return isDateSelected(date) && ![...document.querySelectorAll('.animate-spin')].some(visible);
+  }
   function findSlotBtn(t) { return btns().find((b) => txt(b).startsWith(t) || txt(b).includes(t + '-') || txt(b).includes(t + '\u2013')); }
   function findByText(re) { return btns().find((b) => re.test(txt(b)) && visible(b) && !b.disabled); }
   function closeAgreeDialog() {
@@ -472,17 +483,19 @@ if (!SYNOVA_DUP && /mellojoylucky\.cn$/.test(location.hostname)) (function () {
   function isCurrentRun(runAt) { return st.active && st.mode === 'run' && st.runAt === runAt; }
   const stoppedBeforeSubmit = () => ({ kind: 'stop', notSent: true, note: '申込を停止しました' });
   const unknownRegistration = () => ({ kind: 'stop', pending: true, note: '申込結果を確認できません。マイチケットを確認してください。' });
-  async function trySlot(t) {
+  async function trySlot(date, t) {
     const runAt = st.runAt;
     closeAgreeDialog();
-    const sb = await waitFor(() => findSlotBtn(t), 8000);
+    const sb = await waitFor(() => dateSlotsReady(date) && findSlotBtn(t), 8000);
     if (!isCurrentRun(runAt)) return stoppedBeforeSubmit();
+    if (!dateSlotsReady(date)) return { kind: 'skip', note: '選択した日付の枠を確認できませんでした' };
     if (!sb) return { kind: 'skip', note: L('\u67a0\u30dc\u30bf\u30f3\u306a\u3057', 'kh\u00f4ng th\u1ea5y n\u00fat khung') };
     if (sb.disabled || /\u6e80\u5e2d|\u7d42\u4e86/.test(txt(sb))) return { kind: 'skip', note: '\u6e80\u5e2d' };
     sb.click();
     await sleep(50);                         // \u0111\u1ec3 React ghi khung v\u1eeba ch\u1ecdn
     const join = await waitFor(() => findByText(/\u62bd\u9078\u306b\u53c2\u52a0/), 3000);
     if (!isCurrentRun(runAt)) return stoppedBeforeSubmit();
+    if (!isDateSelected(date)) return { kind: 'skip', note: '選択した日付が変わりました' };
     if (!join) return { kind: 'skip', note: L('\u62bd\u9078\u306b\u53c2\u52a0 \u62bc\u305b\u305a', 'kh\u00f4ng b\u1ea5m \u0111\u01b0\u1ee3c \u62bd\u9078\u306b\u53c2\u52a0') };
 
     regPosted = false;
@@ -499,7 +512,13 @@ if (!SYNOVA_DUP && /mellojoylucky\.cn$/.test(location.hostname)) (function () {
       if (!isCurrentRun(runAt)) return stoppedBeforeSubmit();
       await ensureToken();
       if (!isCurrentRun(runAt)) return stoppedBeforeSubmit();
-      if (agree && resultWaiter === resolveResponse) agree.click();
+      if (agree && resultWaiter === resolveResponse) {
+        if (!isDateSelected(date) && !regPosted) {
+          closeAgreeDialog();
+          return { kind: 'skip', note: '選択した日付が変わりました' };
+        }
+        agree.click();
+      }
       if (st.active) tsFill(TS_POOL);           // gi\u1ea3i b\u00f9 token cho l\u01b0\u1ee3t sau
 
       const r = await resP;
@@ -572,7 +591,11 @@ if (!SYNOVA_DUP && /mellojoylucky\.cn$/.test(location.hostname)) (function () {
       }
       // ng\u00e0y m\u1edbi m\u1edf: khung n\u00e0o c\u0169ng c\u00f2n ch\u1ed7 -> kh\u1ecfi h\u1ecfi API slots (\u0111\u1ee1 0,2\u20130,5 gi\u00e2y); ng\u00e0y c\u0169 th\u00ec h\u1ecfi song song l\u00fac ch\u1edd trang v\u1ebd khung
       const slotsP = st.fresh ? Promise.resolve(null) : apiSlots(date);
-      if (!rq) await sleep(120);                         // ch\u1edd trang \u0111\u1ed5i sang khung c\u1ee7a ng\u00e0y v\u1eeba b\u1ea5m
+      if (!rq && !await waitFor(() => dateSlotsReady(date), 2500)) {
+        if (!isCurrentRun(runAt)) return;
+        log(`${date} の枠の表示を確認できなかったためスキップしました`);
+        continue;
+      }
       const slotList = await slotsP;
       const order = slotOrder(slotList);
       const slotIndexes = new Map();
@@ -592,7 +615,7 @@ if (!SYNOVA_DUP && /mellojoylucky\.cn$/.test(location.hostname)) (function () {
             finish(L(`\u672c\u65e5\u306e\u9001\u4fe1\u4e0a\u9650\uff08${MAX_POSTS}\u56de\uff09\u306b\u9054\u3057\u305f\u306e\u3067\u505c\u6b62\uff08RATE_LIMIT \u9632\u6b62\uff09`, `H\u00f4m nay \u0111\u00e3 g\u1eedi \u0111\u1ee7 ${MAX_POSTS} l\u1ea7n \u2013 d\u1eebng (tr\u00e1nh b\u1ecb RATE_LIMIT kh\u00f3a c\u1ea3 ng\u00e0y)`)); beep(1); return;
           }
           if (!rq) { log(L(`${md} ${t} \u7533\u8fbc\u4e2d\u2026`, `${md} ${t}: \u0111ang b\u1ea5m \u0111\u0103ng k\u00fd\u2026`)); setStatus(L(`${md} ${t} \u7533\u8fbc\u4e2d\u2026`, `\u0110ang \u0111\u0103ng k\u00fd ${md} ${t}\u2026`)); }
-          r = rq ? await rqTry(date, t, slotIndexes.get(t)) : await trySlot(t);
+          r = rq ? await rqTry(date, t, slotIndexes.get(t)) : await trySlot(date, t);
           if (!isCurrentRun(runAt)) return;
           if (!r.pending) st.postPending = false;
           if ((r.kind !== 'skip' || r.lost) && !r.notSent) st.posts = (st.posts || 0) + 1;
@@ -611,6 +634,7 @@ if (!SYNOVA_DUP && /mellojoylucky\.cn$/.test(location.hostname)) (function () {
           } else break;
           if (!rq) { const tb = findDateTab(date); if (tb) tb.click(); await sleep(150); }
         }
+        if (r.kind === 'skip' && !r.lost) log(`${md} ${t} スキップ: ${r.note}`);
         if (!r.busy && r.kind !== 'early') done.add(date + t);
         if (r.kind === 'lose' || r.lost) markLost(date + '#' + t);
         if (r.kind === 'early') { busyLeft = true; log(L(`${md} ${t} \u307e\u3060\u53d7\u4ed8\u524d \u2192 \u6b21\u306e\u6642\u9593\u5e2f\u3078`, `${md} ${t} v\u1eabn ch\u01b0a m\u1edf \u2192 sang khung k\u1ebf`)); }
@@ -1087,7 +1111,8 @@ if (!SYNOVA_DUP && /mellojoy(japan|us)\.com$/.test(location.hostname)) {
   // 0,5s/l\u1ea7n l\u00fac th\u01b0\u1eddng; shop v\u1eeba thay \u0111\u1ed5i (\u0111\u0103ng m\u00f3n m\u1edbi, \u0111\u1ed5i t\u1ed3n kho\u2026) -> 0,3s trong 90 gi\u00e2y v\u00ec h\u00e0ng th\u01b0\u1eddng l\u00ean ngay sau \u0111\u00f3.
   // B\u1ecb 429 th\u00ec t\u1ef1 gi\u00e3n nh\u01b0 b\u1ea3n Nh\u1eadt (backoff).
   const US_POLL_MS = 500, US_BURST_MS = 300, US_BURST_FOR = 90e3;
-  let usSig = '', usBurstUntil = 0;
+  const K_US_RETRY_AT = 'pjc_us_retry_at_v1';
+  let usSig = '', usBurstUntil = 0, usPoll = US_POLL_MS, usOk = 0;
   // Gi\u1edd m\u1edf b\u00e1n theo GI\u1edc \u0110I\u1ec6N THO\u1ea0I (gi\u1edd Vi\u1ec7t Nam). Nh\u1eadt: 12:00 JST = gi\u1edd m\u00e1y c\u1ee7a 03:00 UTC.
   const pad = (n) => String(n).padStart(2, '0');
   // M\u1ecdi gi\u1edd trong khung n\u00e0y l\u00e0 GI\u1edc NH\u1eacT (JST), kh\u00f4ng ph\u1ee5 thu\u1ed9c m\u00fai gi\u1edd \u0111i\u1ec7n tho\u1ea1i
@@ -1149,7 +1174,7 @@ if (!SYNOVA_DUP && /mellojoy(japan|us)\.com$/.test(location.hostname)) {
       catch (e) { stats.err++; throw new Error(e.name === 'AbortError' ? L('\u5fdc\u7b54\u306a\u3057(4\u79d2)', 'shop kh\u00f4ng tr\u1ea3 l\u1eddi (4 gi\u00e2y)') : e.message); }
       stats.lat += performance.now() - t0;
       lastScan = { sent, ms: Math.round(performance.now() - t0) };
-      if (r.status === 429) { stats.r429++; const e = new Error('429'); e.retryAfter = parseFloat(r.headers.get('Retry-After')) || 0; throw e; }
+      if (r.status === 429) { stats.r429++; const e = new Error('429'); e.retryAfter = r.headers.get('Retry-After'); throw e; }
       if (!r.ok) { stats.err++; throw new Error('HTTP ' + r.status); }
       try { ps = (await r.json()).products || []; } catch (e) { stats.err++; throw new Error(e.name === 'AbortError' ? L('\u5fdc\u7b54\u306a\u3057(4\u79d2)', 'shop kh\u00f4ng tr\u1ea3 l\u1eddi (4 gi\u00e2y)') : e.message); }
     } finally { clearTimeout(tm); }
@@ -1158,7 +1183,7 @@ if (!SYNOVA_DUP && /mellojoy(japan|us)\.com$/.test(location.hostname)) {
     if (ps.length) warmOps(ps);
     if (IS_US) {
       const sig = ps.map((p) => p.id + ':' + p.updated_at + ':' + (p.variants || []).map((v) => (v.available ? 1 : 0)).join('')).join('|');
-      if (usSig && sig !== usSig) {
+      if (usPoll === US_POLL_MS && usSig && sig !== usSig) {
         if (Date.now() > usBurstUntil) log(L('\u30b7\u30e7\u30c3\u30d7\u306b\u5909\u5316\u3042\u308a \u2192 90\u79d2\u9593 \u9ad8\u901f\u76e3\u8996\uff080.3\u79d2\uff09', 'Shop v\u1eeba thay \u0111\u1ed5i \u2192 qu\u00e9t nhanh 0,3 gi\u00e2y trong 90 gi\u00e2y'));
         usBurstUntil = Date.now() + US_BURST_FOR;
       }
@@ -1755,20 +1780,45 @@ if (!SYNOVA_DUP && /mellojoy(japan|us)\.com$/.test(location.hostname)) {
     setStatus(L('\u30ab\u30fc\u30c8\u8ffd\u52a0\u3067\u304d\u305a \u2192 \u76e3\u8996\u3092\u7d9a\u3051\u307e\u3059', 'Kh\u00f4ng th\u00eam \u0111\u01b0\u1ee3c v\u00e0o gi\u1ecf \u2192 qu\u00e9t ti\u1ebfp'));
   }
 
-  async function scan() {
+  function usRetryWait(header) {
+    const value = header?.trim() || '';
+    const delay = /^\d+$/.test(value) ? Number(value) * 1000 : Date.parse(value) - Date.now();
+    const fallback = Math.min(60000, 5000 * 2 ** Math.max(0, hits429 - 1));
+    return Number.isFinite(delay) && delay > 0 ? Math.max(1000, delay) : fallback;
+  }
+
+  async function scan(gen = runGen) {
     inflight++;
     try {
       const ps = await getProducts();
+      if (IS_US && (gen !== runGen || !st.active || Date.now() < backoffUntil)) return;
+      if (IS_US && usPoll > US_POLL_MS && ++usOk >= 20) {
+        usPoll = Math.max(US_POLL_MS, usPoll - 500);
+        usOk = 0;
+      }
       hits429 = 0;                               // g\u1eedi \u0111\u01b0\u1ee3c l\u1ea1i -> h\u1ebft b\u1ecb ch\u1eb7n
       if (denseMs > DENSE_MS) denseMs = Math.max(DENSE_MS, denseMs - 10);   // h\u1ebft b\u1ecb ch\u1eb7n -> nh\u1ecbp qu\u00e9t nhanh d\u1ea7n v\u1ec1 300ms
       await handle(ps);
     } catch (e) {
       if (e.message === '429') {
         const now = Date.now();
+        if (IS_US) {
+          const previous = Math.max(backoffUntil, Number(load(K_US_RETRY_AT, 0)) || 0);
+          if (now >= previous) {
+            hits429++;
+            usPoll = Math.min(5000, usPoll * 2);
+            usOk = 0;
+          }
+          backoffUntil = Math.max(previous, now + usRetryWait(e.retryAfter));
+          save(K_US_RETRY_AT, backoffUntil);
+          if (now >= previous && st.active) log(`ショップのアクセス制限 (429) により ${Math.ceil((backoffUntil - now) / 1000)}秒待機します`);
+          return;
+        }
         if (now >= backoffUntil) {               // nhi\u1ec1u l\u01b0\u1ee3t c\u00f9ng tr\u1ea3 429 -> ch\u1ec9 t\u00ednh 1 l\u1ea7n
           hits429++;
           let wait = Math.min(BACKOFF_MAX, BACKOFF_MIN * 2 ** (hits429 - 1));
-          if (e.retryAfter > 0) wait = Math.min(BACKOFF_MAX, Math.max(BACKOFF_MIN, e.retryAfter * 1000));
+          const retryAfter = parseFloat(e.retryAfter) || 0;
+          if (retryAfter > 0) wait = Math.min(BACKOFF_MAX, Math.max(BACKOFF_MIN, retryAfter * 1000));
           backoffUntil = now + wait;
           denseMs = Math.min(600, denseMs + 100);      // b\u1ecb 429: gi\u00e3n nh\u1ecbp 300 \u2192 400 \u2192 \u2026 \u2192 600ms
           setStatus(L('\u5728\u5eab\u76e3\u8996\u4e2d\u2026', '\u0110ang canh h\u00e0ng\u2026'));
@@ -1792,8 +1842,9 @@ if (!SYNOVA_DUP && /mellojoy(japan|us)\.com$/.test(location.hostname)) {
       prev = { ...stats };
       // m\u1ed7i gi\u00e2y: 1 d\u00f2ng cho t\u1eebng t\u1eeb kh\u00f3a. Ghi ng\u01b0\u1ee3c (KW cu\u1ed1i tr\u01b0\u1edbc) \u0111\u1ec3 log m\u1edbi-\u1edf-tr\u00ean hi\u1ec7n KW1 tr\u00ean c\u00f9ng
       const ST = { in: L('\u5728\u5eab\u3042\u308a\u2705', 'c\u00f2n h\u00e0ng \u2705'), out: L('\u58f2\u308a\u5207\u308c', 'h\u1ebft h\u00e0ng'), none: L('\u672a\u63b2\u8f09', 'ch\u01b0a l\u00ean k\u1ec7') };
+      if (IS_US && Date.now() < backoffUntil) return;
       if (d.err && !d.ok) log(L('\u30cd\u30c3\u30c8\u30ef\u30fc\u30af\u30a8\u30e9\u30fc', 'l\u1ed7i m\u1ea1ng'));
-      const wait = Date.now() - lastOkAt;
+      const wait = Date.now() - Math.max(lastOkAt, IS_US ? backoffUntil : 0);
       if (wait > 2500 + (cfg.monitorDelay || 0)) log(L(`\u23f3 \u30b7\u30e7\u30c3\u30d7\u5fdc\u7b54\u306a\u3057 ${Math.round(wait / 1000)}\u79d2\uff08\u518d\u9001\u4e2d\uff09`, `\u23f3 Shop ch\u01b0a tr\u1ea3 l\u1eddi ${Math.round(wait / 1000)} gi\u00e2y (\u0111ang g\u1eedi l\u1ea1i)`));
       else for (const k of [...kwStat].reverse()) log(`[${k.label}] ${k.kw} \u00b7 ${ST[k.st]}`);
       if (adding) log(L('\u5728\u5eab\u3042\u308a \u2192 \u30ab\u30fc\u30c8\u306b\u8ffd\u52a0\u4e2d\u2026', 'C\u00f3 h\u00e0ng \u2192 \u0111ang th\u00eam v\u00e0o gi\u1ecf\u2026'));
@@ -1803,7 +1854,8 @@ if (!SYNOVA_DUP && /mellojoy(japan|us)\.com$/.test(location.hostname)) {
   let runGen = 0;
   async function run() {
     warmUp();
-    adding = false; inflight = 0; slowMode = false; hits429 = 0; denseMs = DENSE_MS; logged429 = false;
+    adding = false; slowMode = false; hits429 = 0; denseMs = DENSE_MS; logged429 = false;
+    if (!IS_US) inflight = 0;
     kwStat = []; lastOkAt = Date.now();
     const gen = ++runGen;                       // b\u1ea5m D\u1eebng -> B\u1eaft \u0111\u1ea7u l\u1ea1i: v\u00f2ng c\u0169 (c\u00f3 th\u1ec3 \u0111ang ch\u1edd shop) t\u1ef1 tho\u00e1t, kh\u00f4ng ch\u1ea1y 2 v\u00f2ng
     let denseShown = false, opened = false;
@@ -1820,6 +1872,16 @@ if (!SYNOVA_DUP && /mellojoy(japan|us)\.com$/.test(location.hostname)) {
       }
       if (!st.now && left < -GIVE_UP_MIN * 60e3) { finish(L(`${GIVE_UP_MIN}\u5206\u904e\u304e\u3066\u3082\u58f2\u308a\u5207\u308c \u2192 \u505c\u6b62`, `Qu\u00e1 ${GIVE_UP_MIN} ph\u00fat v\u1eabn h\u1ebft h\u00e0ng \u2013 d\u1eebng`)); return; }
       startTicker();
+      if (IS_US) {
+        backoffUntil = Math.max(backoffUntil, Number(load(K_US_RETRY_AT, 0)) || 0);
+        const remaining = backoffUntil - Date.now();
+        if (remaining > 0) {
+          usPoll = Math.max(usPoll, US_POLL_MS * 2);
+          setStatus(`アクセス制限 (429) で待機中。再開まで ${Math.ceil(remaining / 1000)}秒`);
+          await sleep(Math.min(remaining, 1000));
+          continue;
+        }
+      }
       if (adding || Date.now() < backoffUntil) { await sleep(40); continue; }
       const dense = !st.now && !slowMode && left <= -DENSE_FROM_MS && left > -DENSE_FOR_MS;
       curDense = dense;
@@ -1831,7 +1893,8 @@ if (!SYNOVA_DUP && /mellojoy(japan|us)\.com$/.test(location.hostname)) {
         // US canh li\u00ean t\u1ee5c: g\u1eedi theo nh\u1ecbp, KH\u00d4NG ch\u1edd l\u01b0\u1ee3t tr\u01b0\u1edbc tr\u1ea3 l\u1eddi (t\u1ed1i \u0111a 2 l\u01b0\u1ee3t c\u00f9ng l\u00fac)
         // -> 1 request b\u1ecb shop gi\u1eef l\u00e2u kh\u00f4ng l\u00e0m BOT \u0111\u1ee9ng im (log 2/11: c\u00f2n h\u00e0ng m\u00e0 kh\u00f4ng th\u00eam gi\u1ecf m\u1ea5y ph\u00fat)
         if (inflight < 2) scan();
-        await sleep(Math.max(Date.now() < usBurstUntil ? US_BURST_MS : US_POLL_MS, cfg.monitorDelay || 0) + Math.random() * 60);
+        const interval = usPoll === US_POLL_MS && Date.now() < usBurstUntil ? US_BURST_MS : usPoll;
+        await sleep(Math.max(interval, cfg.monitorDelay || 0) + Math.random() * 60);
       } else {
         await scan();
         await sleep(Math.max(0, Math.max(POLL_MS, cfg.monitorDelay || 0) + Math.random() * 60 - (Date.now() - t0)));
