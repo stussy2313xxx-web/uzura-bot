@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          うずら BOT Android — ショップ・購入通知
 // @namespace     uzura.bot.android.shops
-// @version       2.1.44.10940
+// @version       2.1.44.10941
 // @description   Android版。Shopify、Supreme、HUMAN MADE、Buffer、Palace、and STなどの購入補助とDiscord購入通知。
 // @match         https://*/*
 // @run-at        document-start
@@ -21,16 +21,23 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
 // Purchase-success webhook settings shared through Userscripts GM storage.
 (async function uzuraDiscord() {
   'use strict';
+  if (window.top !== window) return;
+  const setupPage = location.origin === 'https://github.com' &&
+    /^\/stussy2313xxx-web\/uzura-bot\/?$/.test(location.pathname) &&
+    new URLSearchParams(location.search).get('money-lab-notify') === 'setup';
   const dedicated = ['test.valladstudio.com', 'www.dot-st.com'].includes(location.hostname);
-  if (window.top !== window || (!dedicated && !UZURA_CURRENT && !/(^|\.)(?:mellojoy(?:lucky\.cn|japan\.com|us\.com)|shop\.app|supreme\.com|humanmade\.jp|buffering\.jp)$|^(?:checkout\.)?jp\.palaceskateboards\.com$/i.test(location.hostname))) return;
-  const VALID = /^https:\/\/discord\.com\/api\/webhooks\/\d+\/[\w-]+$/;
+  if (!setupPage && !dedicated && !UZURA_CURRENT && !/(^|\.)(?:mellojoy(?:lucky\.cn|japan\.com|us\.com)|shop\.app|supreme\.com|humanmade\.jp|buffering\.jp)$|^(?:checkout\.)?jp\.palaceskateboards\.com$/i.test(location.hostname)) return;
+  const VALID = /^https:\/\/discord\.com\/api\/webhooks\/1569727749768093770\/[\w-]+$/;
   const MONEY_LAB_GUILD = '1556313614053408889';
   const MONEY_LAB_CHANNEL = '1556317116473544856';
   const load = (k,d) => GM.getValue('uzura_notify_'+k,d);
   const save = (k,v) => GM.setValue('uzura_notify_'+k,v);
-  let active = await load('enabled',true), hook = await load('hook','');
-  const request = payload => new Promise((resolve,reject) => {
-    if (!VALID.test(hook)) return reject(new Error('Webhook URLを保存してください'));
+  if (setupPage) {
+    if (document.body) mountSettings();
+    else document.addEventListener('DOMContentLoaded', mountSettings, { once: true });
+    return;
+  }
+  const request = (hook, payload) => new Promise((resolve,reject) => {
     GM.xmlHttpRequest({method:'POST',url:hook+'?wait=true',headers:{'Content-Type':'application/json'},
       data:JSON.stringify(payload),timeout:15000,
       onload:r=>r.status>=200&&r.status<300 ? resolve() : reject(new Error('Discord HTTP '+r.status)),
@@ -41,8 +48,8 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
   window.addEventListener('uzura-purchase-success',e => {
     let data;try {data=JSON.parse(e.detail);} catch{return;}
     queue=queue.then(async()=>{
-      active=await load('enabled',true);hook=await load('hook','');
-      if(!active || !VALID.test(hook) || !Array.isArray(data.embeds)) return;
+      const hook = await load('hook', '');
+      if (!VALID.test(hook) || !Array.isArray(data.embeds)) return;
       const lottery = /(^|\.)mellojoylucky\.cn$/i.test(location.hostname);
       const embeds=data.embeds.filter(x=>lottery ? /Lottery Won/.test(x.author||'') : /Checkout Successful/.test(x.author||'')).slice(0,10).map(x=>({
         title:String(x.title||'購入成功').slice(0,250),color:0x2ecc71,
@@ -58,30 +65,17 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
       const sent=await load('sent',{});
       if(sent[id]) return;
       try {
-        await request({username:'うずら BOT',allowed_mentions:{parse:[]},embeds});
+        await request(hook, {username:'うずら BOT',allowed_mentions:{parse:[]},embeds});
         sent[id]=Date.now();await save('sent',Object.fromEntries(Object.entries(sent).slice(-100)));say(lottery ? '入店抽選の当選通知を送信しました。' : '購入成功の通知を送信しました。');
-      } catch(err){say(err.message+'。送信先や通信状況を管理者に確認してください。');pending={id,embeds};}
+      } catch(err){say(err.message+'。送信先や通信状況を管理者に確認してください。');}
     }).catch(()=>{});
   });
-  let pending=null, info;
   const say=t=>{console.info('[うずら BOT 通知]',t);};
-  function mountToggle() {
-    const button=document.createElement('button');
-    button.id='uzura-discord-toggle';
-    button.style.cssText='position:fixed;right:10px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:2147483647;background:#10213b;color:#fff;border:1px solid #9bb3d2;border-radius:16px;padding:10px 12px;font:700 13px -apple-system,sans-serif';
-    const paint=()=>{button.textContent=active?'🔔 購入通知 ON':'🔕 購入通知 OFF';button.setAttribute('aria-pressed',String(active));};
-    paint();
-    button.onclick=async()=>{active=!(await load('enabled',true));await save('enabled',active);paint();};
-    const controls = document.createElement('div');
-    controls.style.cssText = button.style.cssText;
-    controls.style.display = 'flex';
-    controls.style.gap = '6px';
-    controls.style.padding = '5px';
-    button.style.cssText = 'font:inherit;color:inherit;background:none;border:0;cursor:pointer';
+  function mountSettings() {
     const settings = document.createElement('button');
     settings.type = 'button';
-    settings.textContent = 'MONEY LAB 設定';
-    settings.style.cssText = button.style.cssText;
+    settings.textContent = 'MONEY LAB 通知先を設定';
+    settings.style.cssText = 'position:fixed;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:2147483647;background:#10213b;color:#fff;border:1px solid #9bb3d2;border-radius:16px;padding:10px 12px;font:700 13px -apple-system,sans-serif';
     settings.onclick = async event => {
       if (!event.isTrusted || settings.disabled) return;
       const next = window.prompt('MONEY LABの新しいWebhook URLを入力してください')?.trim();
@@ -112,10 +106,8 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
         settings.disabled = false;
       }
     };
-    controls.append(button, settings);
-    document.body.append(controls);
+    document.body.append(settings);
   }
-  if(document.body)mountToggle();else document.addEventListener('DOMContentLoaded',mountToggle,{once:true});
 })();
 
 
@@ -1158,7 +1150,7 @@ window.__synovashop = true;
 const SYNOVA_WEBHOOK = ''; // Author's fixed notification destination disabled.
 const SYNOVA_LOGO_B64 = '';
 const SYNOVA_NAME = 'うずら BOT';
-const UZURA_RELEASE = '2.1.44.10940';
+const UZURA_RELEASE = '2.1.44.10941';
 const SYNOVA_VERSION = '1.9.8';
 const SYNOVA_ICON = UZURA_SHOP_PANEL_ICON;
 const SYNOVA_TITLE = '';
