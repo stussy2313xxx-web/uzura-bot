@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          うずら BOT Android — ショップ・購入通知
 // @namespace     uzura.bot.android.shops
-// @version       2.1.44.10938
+// @version       2.1.44.10939
 // @description   Android版。Shopify、Supreme、HUMAN MADE、Buffer、Palace、and STなどの購入補助とDiscord購入通知。
 // @match         https://*/*
 // @run-at        document-start
@@ -1075,7 +1075,7 @@ window.__synovashop = true;
 const SYNOVA_WEBHOOK = ''; // Author's fixed notification destination disabled.
 const SYNOVA_LOGO_B64 = '';
 const SYNOVA_NAME = 'うずら BOT';
-const UZURA_RELEASE = '2.1.44.10938';
+const UZURA_RELEASE = '2.1.44.10939';
 const SYNOVA_VERSION = '1.9.8';
 const SYNOVA_ICON = UZURA_SHOP_PANEL_ICON;
 const SYNOVA_TITLE = '';
@@ -1457,19 +1457,37 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
   // ===================== Shop Shopify kh\u00e1c (t\u1ef1 nh\u1eadn) =====================
   // /products.json (250 m\u00f3n m\u1edbi nh\u1ea5t). M\u00f3n \u0111\u00e3 kh\u1edbp t\u1eeb kh\u00f3a: /products/<handle>.js (nh\u1eb9) 2/3 s\u1ed1 l\u01b0\u1ee3t.
   // Shop ch\u1eb7n products.json (VD 403 nh\u01b0 Supreme) -> \u0111\u1ecdc <script id="products-json"> trong /collections/all n\u1ebfu theme c\u00f3.
+  const shopifyScope = (() => {
+    if (!IS_GEN) return {};
+    const path = location.pathname.slice(SHOP_ROOT.length - 1);
+    if (HOST === 'jp.stussy.com' && path === '/') return { collection: 'new-arrivals' };
+    const product = /^\/(?:collections\/[^/]+\/)?products\/([^/]+)\/?$/i.exec(path);
+    const collection = /^\/collections\/([^/]+)\/?$/i.exec(path);
+    const decode = (value) => {
+      try { return decodeURIComponent(value); } catch { return value; }
+    };
+    if (product) return { handle: decode(product[1]) };
+    return { collection: collection ? decode(collection[1]) : UZURA_CURRENT?.collection };
+  })();
+  const shopifyCatalogPath = shopPath(shopifyScope.collection
+    ? 'collections/' + encodeURIComponent(shopifyScope.collection) + '/products.json'
+    : 'products.json');
+  const shopifyProductPath = handle => shopPath('products/' + encodeURIComponent(handle) + '.js');
+
   const gen = {
     focus: [], round: 0, mode: 'json', currency: '', ready: null,
-    async ensureReady() {
-      if (this.ready) return this.ready;
-      this.ready = (async () => {
-        const r = await get(shopPath('cart.js'), { headers: { Accept: 'application/json' } });
-        if (r.status === 403) throw new Blocked('この店舗のカートへのアクセスが拒否されました');
-        if (r.status !== 200) throw new Error('カート情報を取得できません: HTTP ' + r.status);
-        let c; try { c = JSON.parse(r.text); } catch { throw new Error('カートが標準Shopify形式ではありません'); }
-        if (!c || !Array.isArray(c.items) || !/^[A-Z]{3}$/.test(c.currency || '')) throw new Error('カート形式・通貨を確認できません');
-        this.currency = c.currency;
-        return c;
-      })().catch(e => { this.ready = null; throw e; });
+    async readCart() {
+      const r = await get(shopPath('cart.js'), { headers: { Accept: 'application/json' } });
+      if (r.status === 403) throw new Blocked('この店舗のカートへのアクセスが拒否されました');
+      if (r.status !== 200) throw new Error('カート情報を取得できません: HTTP ' + r.status);
+      let cart;
+      try { cart = JSON.parse(r.text); } catch { throw new Error('カートが標準Shopify形式ではありません'); }
+      if (!cart || !Array.isArray(cart.items) || !/^[A-Z]{3}$/.test(cart.currency || '')) throw new Error('カート形式・通貨を確認できません');
+      this.currency = cart.currency;
+      return cart;
+    },
+    ensureReady() {
+      if (!this.ready) this.ready = this.readCart().catch(e => { this.ready = null; throw e; });
       return this.ready;
     },
     conv(p, cents) {
@@ -1489,22 +1507,14 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
         }),
       };
     },
-    stussyScope() {
-      if (HOST !== 'jp.stussy.com') return {};
-      if (location.pathname === '/') return { collection: 'new-arrivals' };
-      const product = /^(?:\/collections\/[a-z0-9-]+)?\/products\/([a-z0-9-]+)\/?$/i.exec(location.pathname);
-      const collection = /^\/collections\/([a-z0-9-]+)\/?$/i.exec(location.pathname);
-      return { handle: product?.[1], collection: collection?.[1] };
-    },
     async list() {
       await this.ensureReady();
       this.round++;
-      const { handle: currentProduct, collection: activeCollection } = this.stussyScope();
-      const newArrivalsOnly = activeCollection === 'new-arrivals';
-      if (currentProduct || (!newArrivalsOnly && this.focus.length && this.round % 3)) {
+      const { handle: currentProduct, collection } = shopifyScope;
+      if (currentProduct || (!collection && this.focus.length && this.round % 3)) {
         const products = [];
         for (const handle of currentProduct ? [currentProduct] : this.focus.slice(0, 4)) {
-          const r = await get(shopPath('products/' + encodeURIComponent(handle) + '.js'), { headers: { Accept: 'application/json' } });
+          const r = await get(shopifyProductPath(handle), { headers: { Accept: 'application/json' } });
           if (r.status === 403) throw new Blocked('商品情報へのアクセスが拒否されました');
           if (r.status === 404) continue;
           if (r.status !== 200) throw new Error('商品情報 HTTP ' + r.status);
@@ -1513,12 +1523,8 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
         return { products, partial: true };
       }
       if (this.mode === 'json') {
-        const collection = activeCollection || UZURA_CURRENT?.collection;
-        const path = 'products.json?limit=250&_=' + Date.now();
-        const options = { headers: { Accept: 'application/json' } };
-        let r = await get(shopPath(collection ? 'collections/' + encodeURIComponent(collection) + '/' + path : path), options);
-        if (newArrivalsOnly && r.status === 404) throw new Error('NEW ARRIVALSの商品一覧を取得できません（HTTP 404）');
-        if (activeCollection && r.status === 404) r = await get(shopPath(path), options);
+        const r = await get(shopifyCatalogPath + '?limit=250&_=' + Date.now(), { headers: { Accept: 'application/json' } });
+        if (collection && r.status === 404) throw new Error('指定のコレクションの商品一覧を取得できません（HTTP 404）');
         if (r.status === 403) throw new Blocked('商品一覧へのアクセスが拒否されました');
         if (r.status === 200) {
           let j; try { j = JSON.parse(r.text); } catch { throw new Error('商品一覧がJSONではありません'); }
@@ -1560,14 +1566,33 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
         body: JSON.stringify({ items: items.map(x => ({ id: x.id, quantity: Number(x.qty) })) }) }); } catch { throw new Blocked('通信結果が不明です。再実行せずカートを手動で確認してください'); }
       if (r.status === 403) throw new Blocked('カートへのアクセスが拒否されました');
       if (r.status === 429) throw new Http429(parseFloat(r.headers.get('Retry-After')) || 0);
-      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error('カート追加失敗: ' + (j.description || j.message || r.status)); }
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        try { await this.confirmCart([]); }
+        catch { throw new Blocked('カート追加の結果を確認できません。再実行せずカートを手動で確認してください'); }
+        throw new Error('カート追加失敗: ' + (j.description || j.message || r.status));
+      }
       let j; try { j = await r.json(); } catch { throw new Blocked('追加結果を確認できません。再実行せずカートを手動で確認してください'); }
       const added = Array.isArray(j.items) ? j.items : [j];
       if (!items.every(x => added.some(a => String(a.id || a.variant_id) === String(x.id) && Number(a.quantity) === Number(x.qty)))) throw new Blocked('追加された商品・数量を確認できません。カートを手動で確認してください');
       return items;
     },
-    prune: ok => sup.prune(ok),
-    async clearAll() { await this.ensureReady(); return sup.clearAll(); },
+    async confirmCart(items) {
+      const cart = await this.readCart();
+      const wanted = new Map(items.map(item => [String(item.id), Number(item.qty)]));
+      if (cart.items.length !== wanted.size || cart.items.some(item => {
+        const id = String(item.variant_id ?? item.id);
+        if (wanted.get(id) !== Number(item.quantity)) return true;
+        wanted.delete(id);
+        return false;
+      })) throw new Error('カートの商品・数量が指定と一致しません。カートを手動で確認してください');
+    },
+    async clearAll() {
+      await this.ensureReady();
+      const count = await sup.clearAll();
+      await this.confirmCart([]);
+      return count;
+    },
     checkout: shopPath('checkout'),
   };
 
@@ -1826,6 +1851,11 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
             size: [v.color, v.size].filter((x) => x && x !== '-').join(' / ') || '-', price: '\u00a5' + Math.round(IS_SUP ? v.price / 100 : v.price).toLocaleString('ja-JP') } };
         }
         if (IS_PAL) return { it, s: 'none', hit: null }; // No blind Shopify cart API requests on Palace.
+        if (IS_GEN) {
+          if (Date.now() - (blindAt[vid] || 0) < 1500) return { it, s: 'none', hit: null };
+          blindAt[vid] = Date.now();
+          return { it, s: 'none', hit: { id: vid, qty: qtyOf(0), name: 'Variant ' + vid, url: location.origin, size: '-', price: '' } };
+        }
         // 2) ch\u01b0a l\u00ean danh s\u00e1ch: th\u1eed th\u00eam gi\u1ecf th\u1eb3ng b\u1eb1ng ID (1,5 gi\u00e2y / l\u1ea7n \u0111\u1ec3 kh\u00f4ng b\u1ecb ch\u1eb7n)
         if (Date.now() - (blindAt[vid] || 0) < 1500) return { it, s: blindSt[vid] || 'none', hit: null };
         blindAt[vid] = Date.now();
@@ -1885,9 +1915,9 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
     }));
     const picked = [], seen = new Set(), stat = [];
     for (const { it, s, hit } of res) {
-      const dup = hit && seen.has(hit.id);
-      if (hit && !dup) { seen.add(hit.id); picked.push(hit); }
-      stat.push({ label: `KW${it.i + 1}`, kw: it.kw + (it.color ? ` / ${it.color}` : '') + (it.size ? ` [${it.size}]` : ''), st: hit ? 'in' : s });
+      const id = hit && String(hit.id);
+      if (hit && !seen.has(id)) { seen.add(id); picked.push(hit); }
+      stat.push({ label: `KW${it.i + 1}`, kw: it.kw + (it.color ? ` / ${it.color}` : '') + (it.size ? ` [${it.size}]` : ''), st: s });
     }
     // danh s\u00e1ch \u0111\u1ea7y \u0111\u1ee7 m\u1edbi c\u1eadp nh\u1eadt m\u00f3n c\u1ea7n theo d\u00f5i nhanh (l\u01b0\u1ee3t ch\u1ec9 t\u1ea3i m\u00f3n \u0111\u00e3 bi\u1ebft th\u00ec gi\u1eef nguy\u00ean)
     if (!partial) shop.setFocus([...focus].slice(0, 6));
@@ -1902,13 +1932,29 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
     try {
       const pre = items.filter((x) => x.added), rest = items.filter((x) => !x.added);
       ok = [...pre, ...(rest.length ? await shop.add(rest) : [])];
-    } catch (e) { log(L('\u30ab\u30fc\u30c8\u8ffd\u52a0\u30a8\u30e9\u30fc: ', 'L\u1ed7i th\u00eam gi\u1ecf: ') + e.message); }
+    } catch (e) {
+      if (IS_GEN && e instanceof Http429) { adding = false; throw e; }
+      if (IS_GEN && e instanceof Blocked) { finish(e.message); return false; }
+      log(L('\u30ab\u30fc\u30c8\u8ffd\u52a0\u30a8\u30e9\u30fc: ', 'L\u1ed7i th\u00eam gi\u1ecf: ') + e.message);
+    }
     if (ok.length) {
-      // gi\u1ecf c\u00f2n m\u00f3n kh\u00e1c (th\u00eam tay t\u1eeb tr\u01b0\u1edbc / l\u01b0\u1ee3t c\u0169) -> xo\u00e1, \u0111\u1ec3 trang thanh to\u00e1n ch\u1ec9 c\u00f3 m\u00f3n trong KW
-      try {
-        const extra = await shop.prune(ok);
-        if (extra.length) log(L('\u30ab\u30fc\u30c8\u306e\u4e0d\u8981\u306a\u5546\u54c1\u3092\u524a\u9664: ', '\u0110\u00e3 x\u00f3a m\u00f3n th\u1eeba trong gi\u1ecf: ') + extra.map((x) => String(x).slice(0, 20)).join(', '));
-      } catch (e) { log(L('\u30ab\u30fc\u30c8\u6574\u7406\u30a8\u30e9\u30fc: ', 'L\u1ed7i d\u1ecdn gi\u1ecf: ') + e.message); }
+      if (IS_GEN) {
+        if (!st.active) return false;
+        try {
+          await gen.confirmCart(ok);
+        } catch (error) {
+          finish('購入画面へ進めません: ' + error.message);
+          return false;
+        }
+        if (!st.active) return false;
+        log('カートの商品・数量を確認しました');
+      } else {
+        // gi\u1ecf c\u00f2n m\u00f3n kh\u00e1c (th\u00eam tay t\u1eeb tr\u01b0\u1edbc / l\u01b0\u1ee3t c\u0169) -> xo\u00e1, \u0111\u1ec3 trang thanh to\u00e1n ch\u1ec9 c\u00f3 m\u00f3n trong KW
+        try {
+          const extra = await shop.prune(ok);
+          if (extra.length) log(L('\u30ab\u30fc\u30c8\u306e\u4e0d\u8981\u306a\u5546\u54c1\u3092\u524a\u9664: ', '\u0110\u00e3 x\u00f3a m\u00f3n th\u1eeba trong gi\u1ecf: ') + extra.map((x) => String(x).slice(0, 20)).join(', '));
+        } catch (e) { log(L('\u30ab\u30fc\u30c8\u6574\u7406\u30a8\u30e9\u30fc: ', 'L\u1ed7i d\u1ecdn gi\u1ecf: ') + e.message); }
+      }
       // mua xong: D\u1eeaNG H\u1eb2N (kh\u00f4ng t\u1ef1 b\u1eadt l\u1ea1i khi quay v\u1ec1 trang shop / t\u1ea3i l\u1ea1i trang)
       st.active = false; st.now = false; st.boughtAt = Date.now(); st.reloads = []; save(K_ST, st);
       setStatus(L('\u30ab\u30fc\u30c8\u8ffd\u52a0\u5b8c\u4e86 \u2192 \u8cfc\u5165\u753b\u9762\u3078\uff08BOT\u505c\u6b62\uff09', '\u0110\u00e3 v\u00e0o gi\u1ecf \u2192 sang thanh to\u00e1n (BOT \u0111\u00e3 d\u1eebng)'));
@@ -1947,12 +1993,13 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
   }
 
   // 1 l\u01b0\u1ee3t qu\u00e9t + mua n\u1ebfu c\u00f3 h\u00e0ng; l\u1ed7i x\u1eed l\u00fd t\u1ea1i \u0111\u00e2y (ch\u1ea1y \u0111\u01b0\u1ee3c song song nhi\u1ec1u l\u01b0\u1ee3t)
-  let inflight = 0;
+  let inflight = 0, runGeneration = 0, starting = false, lastScanError = '';
   async function scanOnce() {
     if (!st.active) return;
     inflight++;
     try {
       const items = await scan();
+      lastScanError = '';
       pace = Math.max(1, pace * 0.93);
       if (items.length && !adding && st.active) await buy(items);
     } catch (e) {
@@ -1979,14 +2026,20 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
           return;
         }
         backoffUntil = Date.now() + 2000;
-      } else setStatus(L('\u30a8\u30e9\u30fc: ', 'L\u1ed7i: ') + e.message);
+      } else {
+        if (IS_GEN && lastScanError !== e.message) log('監視エラー: ' + e.message);
+        lastScanError = e.message;
+        setStatus(L('\u30a8\u30e9\u30fc: ', 'L\u1ed7i: ') + e.message);
+      }
     } finally { inflight--; }
   }
 
   async function run() {
     adding = false; hits429 = 0; cfHits = 0; backoffUntil = 0; inflight = 0; pace = 1;
+    const generation = runGeneration;
+    lastScanError = '';
     let opened = false;
-    while (st.active) {
+    while (st.active && generation === runGeneration) {
       const t0 = Date.now();
       const left = st.now ? -1 : msToOpen();
       if (left > WATCH_FROM_SEC * 1000) {
@@ -2009,6 +2062,10 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
   }
 
   function start(now) {
+    if (IS_GEN && (starting || inflight)) {
+      log('前回の通信が終わってから実行してください');
+      return;
+    }
     readCfg();
     if (!cfg.items.slice(0, cfg.kwCount).some((i) => i.kw.trim())) { log(L('\u30ad\u30fc\u30ef\u30fc\u30c9\u3092\u5165\u529b\u3057\u3066\u304f\u3060\u3055\u3044', 'H\u00e3y nh\u1eadp t\u1eeb kh\u00f3a')); return; }
     if (!now && !/^\d{1,2}:\d{2}$/.test(cfg.open || '')) { log(L('\u8ca9\u58f2\u958b\u59cb\u6642\u523b\u3092\u5165\u529b\u3057\u3066\u304f\u3060\u3055\u3044', 'H\u00e3y nh\u1eadp gi\u1edd m\u1edf b\u00e1n')); return; }
@@ -2017,18 +2074,20 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
       if (g) { cfg.grid = g.getAttribute('data-url'); save(K_CFG, cfg); }
       log(L('\u76e3\u8996\u30da\u30fc\u30b8: ', 'Trang qu\u00e9t: ') + decodeURIComponent((cfg.grid || 'cgid=all').replace(/^.*Search-UpdateGrid\??/, '')));
     }
-    if (HOST === 'jp.stussy.com') {
-      const { handle, collection } = gen.stussyScope();
-      const source = handle ? '/products/' + handle + '.js'
-        : collection ? '/collections/' + collection + '/products.json' : '/products.json';
-      log(`[STÜSSY v${UZURA_RELEASE}] 検索先 ${source}`);
+    if (IS_GEN) {
+      const source = shopifyScope.handle ? shopifyProductPath(shopifyScope.handle) : shopifyCatalogPath;
+      log(`[${SHOP} v${UZURA_RELEASE}] 検索先 ${source}`);
     }
     st.active = true; st.now = !!now; st.boughtAt = 0; st.reloads = []; save(K_ST, st); keepAwake();
     if (IS_GEN) {
+      runGeneration++;
+      starting = true;
       shop.clearAll().then(n => {
         if (n) log('開始前にカートを空にしました（' + n + '件）');
+      }).catch(e => finish('開始できません: ' + e.message)).finally(() => {
+        starting = false;
         if (st.active) run();
-      }).catch(e => finish('開始できません: ' + e.message));
+      });
       return;
     }
     shop.clearAll().then((n) => { if (n) log(L(`\u958b\u59cb\u524d\u306b\u30ab\u30fc\u30c8\u3092\u7a7a\u306b\u3057\u307e\u3057\u305f\uff08${n}\u4ef6\uff09`, `\u0110\u00e3 d\u1ecdn gi\u1ecf tr\u01b0\u1edbc khi ch\u1ea1y (${n} m\u00f3n)`)); }).catch(() => {});
@@ -2141,7 +2200,7 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
   box.innerHTML = `
 <style>
 ${UZURA_SHOP_PANEL_CSS}</style>
-<div class="hd">${ICON_TAG}<b class="ttl">${TITLE_TAG}<span class="ver">${SHOP} \u00b7 v${HOST === "jp.stussy.com" ? UZURA_RELEASE : SYNOVA_VERSION}</span></b><button id="sxbpos">${L('\u4e0a\u4e0b', 'L\u00ean/Xu\u1ed1ng')}</button><button id="sxbhide">${L('\u96a0\u3059', '\u1ea8n')}</button></div>
+<div class="hd">${ICON_TAG}<b class="ttl">${TITLE_TAG}<span class="ver">${SHOP} \u00b7 v${IS_GEN ? UZURA_RELEASE : SYNOVA_VERSION}</span></b><button id="sxbpos">${L('\u4e0a\u4e0b', 'L\u00ean/Xu\u1ed1ng')}</button><button id="sxbhide">${L('\u96a0\u3059', '\u1ea8n')}</button></div>
 <div class="st" id="sxbst">${st.active ? L('\u5f85\u6a5f\u4e2d', '\u0110ang ch\u1edd') : L('\u505c\u6b62\u4e2d', '\u0110ang t\u1eaft')}</div>
 <div class="body">
   <div class="desc">${DESC}</div>${UZURA_CURRENT ? `<div class="desc">対応店舗: ${SHOP} ／ 商品取得形式を確認済み・実購入は未検証</div>` : ''}
