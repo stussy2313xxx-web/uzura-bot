@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          うずら BOT Android — ショップ・購入通知
 // @namespace     uzura.bot.android.shops
-// @version       2.1.44.10945
+// @version       2.1.44.10946
 // @description   Android版。Shopify、Supreme、HUMAN MADE、Buffer、Palace、and STなどの購入補助とDiscord購入通知。
 // @match         https://*/*
 // @run-at        document-start
@@ -28,6 +28,12 @@
     const status = document.createElement('div');
     status.setAttribute('role', 'status');
     panel.append(action, status);
+    const log = [];
+    function report(message) {
+      status.textContent = message;
+      log.push(new Date().toLocaleTimeString('ja-JP', {timeZone: 'Asia/Tokyo'}) + ' ' + message);
+      if (log.length > 30) log.shift();
+    }
     let observer;
     let timer;
     let path;
@@ -36,12 +42,12 @@
       observer?.disconnect();
       observer = null;
       clearTimeout(timer);
-      action.textContent = store + '｜すぐ実行';
-      status.textContent = message;
+      action.textContent = vans || abcMart ? '商品ページ・カートを操作' : store + '｜すぐ実行';
+      report(message);
     }
 
-    function findControl(label) {
-      return Array.from(document.querySelectorAll('button, a, input[type=submit], input[type=button], input[type=image]')).find(element =>
+    function findControl(label, root = document) {
+      return Array.from(root.querySelectorAll('button, a, input[type=submit], input[type=button], input[type=image]')).find(element =>
         !panel.contains(element) && !element.matches(':disabled,[aria-disabled="true"]') &&
         element.getClientRects().length && getComputedStyle(element).visibility === 'visible' &&
         label.test((element.getAttribute('aria-label') || element.value || element.getAttribute('alt') || element.textContent).replace(/[\uE000-\uF8FF]/g, '').trim().replace(/\s+/g, ' ')));
@@ -51,7 +57,8 @@
       if (observer) { stop('停止しました'); return; }
       path = location.pathname;
       const cart = /^\/(?:checkout\/)?cart\/?$/.test(path) || (abcMart && path === '/shop/cart/cart.aspx');
-      if ((vans || abcMart) && !cart && !productPath.test(path)) {
+      if (abcMart && !cart) { stop('商品URLとサイズを入力して「すぐ実行」を押してください。'); return; }
+      if (vans && !cart && !productPath.test(path)) {
         stop('公式の商品ページを開き、サイズを選択してください');
         return;
       }
@@ -66,7 +73,7 @@
         control.click();
       }
       action.textContent = '停止';
-      status.textContent = '公式ボタンの表示を待っています（最大2分）';
+      report('公式ボタンの表示を待っています（最大2分）');
       observer = new MutationObserver(check);
       observer.observe(document.body, {subtree: true, childList: true, attributes: true, characterData: true});
       timer = setTimeout(() => stop('操作できるボタンが見つかりませんでした'), 120000);
@@ -82,25 +89,66 @@
       time.type = 'time';
       time.setAttribute('aria-label', '発売時刻（日本時間、空欄ですぐ検索）');
       const submit = document.createElement('button');
-      submit.textContent = '商品を開く・予約';
-      search.append(keyword, time, submit);
-      panel.prepend(search);
+      submit.textContent = '予約・自動スタート';
+      const heading = document.createElement('strong');
+      heading.textContent = 'うずら BOT · ' + store;
+      const runNow = document.createElement('button');
+      runNow.type = 'button';
+      runNow.textContent = 'すぐ実行';
+      const cancel = document.createElement('button');
+      cancel.type = 'button';
+      cancel.textContent = '停止';
+      const showLog = document.createElement('button');
+      showLog.type = 'button';
+      showLog.textContent = 'ログを見る';
+      const output = document.createElement('pre');
+      output.hidden = true;
+      output.style.cssText = 'white-space:pre-wrap;max-height:8em;overflow:auto';
+      showLog.onclick = () => {
+        output.textContent = log.join('\n');
+        output.hidden = !output.hidden;
+      };
+      panel.style.cssText += ';box-sizing:border-box;width:min(460px,calc(100vw - 24px));max-height:65vh;overflow:auto;border:1px solid #526b8d;border-radius:16px;box-shadow:0 6px 24px #0008';
+      search.style.cssText = 'display:grid;gap:8px;margin:10px 0';
+      for (const field of [keyword, time]) {
+        field.style.cssText = 'box-sizing:border-box;width:100%;padding:9px;border:1px solid #526b8d;border-radius:8px;background:#192b45;color:white;font-size:16px';
+      }
+      for (const button of [submit, runNow, cancel, showLog]) {
+        button.style.cssText = 'padding:8px;border:1px solid #526b8d;border-radius:8px;background:#223b5e;color:white;font-weight:bold';
+      }
+      const size = document.createElement('input');
+      size.placeholder = 'サイズ（cm、例 27.5）';
+      size.inputMode = 'decimal';
+      size.setAttribute('aria-label', 'サイズ（cm）');
+      size.style.cssText = keyword.style.cssText;
+      search.append(keyword, size, time, submit, runNow, cancel, showLog);
+      panel.prepend(heading, search);
+      panel.append(output);
       const key = 'uzura-vans-search';
+      const sizeKey = 'uzura-storefront-cart-size';
       let reservation;
+      function prepareProduct(url) {
+        if (size.value.trim()) {
+          sessionStorage.setItem(sizeKey, JSON.stringify({
+            pathname: url.pathname, cm: Number(size.value), expires: Date.now() + 120000
+          }));
+        }
+        if (url.href === location.href) location.reload();
+        else location.assign(url.href);
+      }
       function lookup(query) {
         if (/^https?:/i.test(query) || abcMart) {
           let url;
           try { url = new URL(query); } catch {}
           if (url?.origin === location.origin && productPath.test(url.pathname)) {
-            if (url.href === location.href) location.reload();
-            else location.assign(url.href);
+            prepareProduct(url);
           } else {
-            status.textContent = 'このストアの公式商品URLを入力してください。';
+            report('このストアの公式商品URLを入力してください。');
           }
           return;
         }
         if (location.pathname !== '/new_arrival/') {
-          sessionStorage.setItem(key, query);
+          sessionStorage.setItem(key, JSON.stringify({query, size: size.value}));
           location.assign('/new_arrival/');
           return;
         }
@@ -112,33 +160,94 @@
           const name = [link.textContent, link.getAttribute('aria-label'), link.querySelector('img')?.alt].join(' ');
           if (normalize(name + ' ' + url.pathname).includes(normalize(query))) matches.set(url.pathname, url);
         }
-        if (matches.size === 1) location.assign(matches.values().next().value.href);
-        else status.textContent = matches.size ? '複数の商品が一致しました。品番で絞ってください。' : '現在の新着一覧に一致する商品がありません。';
+        if (matches.size === 1) prepareProduct(matches.values().next().value);
+        else report(matches.size ? '複数の商品が一致しました。品番で絞ってください。' : '現在の新着一覧に一致する商品がありません。');
       }
-      search.addEventListener('submit', event => {
-        event.preventDefault();
+      function start(scheduled) {
         clearTimeout(reservation);
         const query = keyword.value.trim();
         if (!query) return;
-        if (!time.value) { lookup(query); return; }
+        if (size.value.trim() && !/^(?:[1-3]\d)(?:\.[05])?$/.test(size.value.trim())) {
+          report('サイズはcmで入力してください（例 27.5）。');
+          return;
+        }
+        if (!scheduled) { lookup(query); return; }
+        if (!time.value) { report('発売時刻を入力してください。'); return; }
         const now = Date.now();
         const jstDay = new Date(now + 9 * 3600000).toISOString().slice(0, 10);
         let at = Date.parse(jstDay + 'T' + time.value + ':00+09:00');
         if (at < now) at += 86400000;
         reservation = setTimeout(() => {
           if (abcMart || /^https?:/i.test(query)) { lookup(query); return; }
-          sessionStorage.setItem(key, query);
+          sessionStorage.setItem(key, JSON.stringify({query, size: size.value}));
           if (location.pathname === '/new_arrival/') location.reload();
           else location.assign('/new_arrival/');
         }, at - now);
-        status.textContent = '日本時間 ' + time.value + ' に商品を確認します。';
+        report('日本時間 ' + time.value + ' に商品を確認します。');
+      }
+      search.addEventListener('submit', event => {
+        event.preventDefault();
+        start(true);
       });
+      runNow.onclick = () => start(false);
+      cancel.onclick = () => {
+        clearTimeout(reservation);
+        stop('停止しました');
+      };
       const pending = sessionStorage.getItem(key);
       if (pending && location.pathname === '/new_arrival/') {
         sessionStorage.removeItem(key);
-        const run = () => { panel.hidden = false; lookup(pending); };
+        const run = () => {
+          const saved = JSON.parse(pending);
+          panel.hidden = false;
+          size.value = saved.size;
+          lookup(saved.query);
+        };
         if (document.readyState === 'complete') setTimeout(run, 0);
         else window.addEventListener('load', run, {once: true});
+      }
+    }
+    if ((vans || abcMart) && productPath.test(location.pathname)) {
+      const key = 'uzura-storefront-cart-size';
+      const saved = sessionStorage.getItem(key);
+      if (saved) {
+        sessionStorage.removeItem(key);
+        const target = JSON.parse(saved);
+        if (target.pathname === location.pathname && target.expires > Date.now()) {
+          setTimeout(() => {
+            panel.hidden = false;
+            if (abcMart) {
+              const rows = Array.from(document.querySelectorAll('#cartin_form dl')).filter(row => {
+                const match = row.querySelector('dt')?.textContent.normalize('NFKC').match(/\(\s*(\d+(?:\.\d+)?)\s*cm\s*\)/i);
+                return match && Number(match[1]) === target.cm;
+              });
+              const add = rows.length === 1 && findControl(/^カートへ入れる$/, rows[0]);
+              if (!add) { stop('指定サイズのカートボタンが見つかりません。'); return; }
+              stop('指定サイズのカートボタンを押しました。');
+              add.click();
+              return;
+            }
+            const cm = String(target.cm.toFixed(1)).replace('.', '\\.');
+            const sizeControl = findControl(new RegExp('^US [0-9.]+ \\(JP ' + cm + '\\)$'));
+            if (!sizeControl) { stop('指定サイズの選択ボタンが見つかりません。'); return; }
+            sizeControl.click();
+            const verify = () => {
+              const selected = new RegExp('サイズ\\s*[:：]\\s*US [0-9.]+ \\(JP ' + cm + '\\)');
+              if (!selected.test(document.body.innerText)) return;
+              if (!findControl(/^(?:カートに入れる|カートに追加|Add to cart)$/i)) return;
+              observer.disconnect();
+              observer = null;
+              clearTimeout(timer);
+              action.click();
+            };
+            action.textContent = '停止';
+            report('指定サイズの在庫を確認しています。');
+            observer = new MutationObserver(verify);
+            observer.observe(document.body, {subtree: true, childList: true, attributes: true, characterData: true});
+            timer = setTimeout(() => stop('指定サイズをカートに追加できませんでした。'), 120000);
+            verify();
+          }, 0);
+        }
       }
     }
     stop('商品ページまたはカートで使えます');
