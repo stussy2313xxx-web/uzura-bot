@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         うずら BOT — Mellojoy・Shop対応
 // @namespace    uzura.mellojoy.shop
-// @version      2.1.44.10963
+// @version      2.1.44.10965
 // @updateURL    https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.meta.js
 // @downloadURL  https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.user.js
 // @description  Mellojoy・Shopify・Supreme・HUMAN MADE・Buffer・Palace・and STの購入補助。購入成功時のDiscord通知に対応。
@@ -438,6 +438,9 @@
         const number = cardInput('カード番号', 'cc-number', true);
         const expiry = cardInput('MM/YY', 'cc-exp');
         const cardholder = cardInput('カード名義（例 TARO YAMADA）', 'cc-name');
+        const securityCode = cardInput('セキュリティコード（今回の購入のみ）', 'cc-csc', true);
+        securityCode.type = 'password';
+        securityCode.maxLength = 4;
         function cardButton(label, handler) {
           const button = document.createElement('button');
           button.type = 'button';
@@ -455,12 +458,15 @@
           const digits = number.value.normalize('NFKC').replace(/[\s-]/g, '');
           const date = expiry.value.normalize('NFKC').trim().match(/^(0?[1-9]|1[0-2])\s*\/\s*(?:20)?(\d{2})$/);
           if (!/^\d{13,19}$/.test(digits) || !date) throw new Error('card');
-          return [digits, date[1].padStart(2, '0'), date[2], cardholder.value.trim()];
+          const code = securityCode.value.normalize('NFKC').trim();
+          if (code && !/^\d{3,4}$/.test(code)) throw new Error('security code');
+          return [digits, date[1].padStart(2, '0'), date[2], cardholder.value.trim(), code];
         }
         function clearCardFields() {
           number.value = '';
           expiry.value = '';
           cardholder.value = '';
+          securityCode.value = '';
         }
         async function clearPendingCard() {
           sessionStorage.removeItem(pendingCardKey);
@@ -471,8 +477,9 @@
           const raw = crypto.getRandomValues(new Uint8Array(32));
           const iv = crypto.getRandomValues(new Uint8Array(12));
           const key = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt']);
+          const expiresAt = Date.now() + 15 * 60 * 1000;
           const data = await crypto.subtle.encrypt({name: 'AES-GCM', iv}, key,
-            new TextEncoder().encode(JSON.stringify(card)));
+            new TextEncoder().encode(JSON.stringify({card, expiresAt})));
           await GM.setValue(pendingCardKey, {iv: Array.from(iv), data: Array.from(new Uint8Array(data))});
           sessionStorage.setItem(pendingCardKey, JSON.stringify(Array.from(raw)));
           clearCardFields();
@@ -485,7 +492,7 @@
           report('BOT欄と準備済みカードを消去しました。');
         });
         if (checkout) {
-          cardButton('購入画面のカード欄へ入力', async () => {
+          async function fillCard() {
             let card;
             if (number.value.trim() || expiry.value.trim()) {
               card = readCardFields();
@@ -496,22 +503,78 @@
               const key = await crypto.subtle.importKey('raw', Uint8Array.from(raw), 'AES-GCM', false, ['decrypt']);
               const data = await crypto.subtle.decrypt({name: 'AES-GCM', iv: Uint8Array.from(pending.iv)},
                 key, Uint8Array.from(pending.data));
-              card = JSON.parse(new TextDecoder().decode(data));
+              const prepared = JSON.parse(new TextDecoder().decode(data));
+              if (Array.isArray(prepared)) {
+                card = prepared;
+              } else {
+                if (!Number.isFinite(prepared.expiresAt) || Date.now() >= prepared.expiresAt) {
+                  await clearPendingCard();
+                  report('準備したカードの有効時間が過ぎました。再入力してください。');
+                  return;
+                }
+                card = prepared.card;
+              }
             }
-            const [digits, month, year, name] = card;
+            const [digits, month, year, name, code = ''] = card;
+            const confirmation = findControl(/^(?:ご)?注文を確定する$/);
+            if (code && !confirmation) {
+              report('注文確認画面でカード欄への入力を実行してください。');
+              return;
+            }
             const controls = Array.from(document.querySelectorAll('input,select')).filter(control =>
               !control.matches(':disabled,[readonly],[type=hidden]') &&
               control.getClientRects().length && getComputedStyle(control).visibility === 'visible');
+            const normalizeLabel = text => text.normalize('NFKC').replace(/\s+/g, '');
+            function controlsUnderCaption(caption, selector) {
+              const titles = Array.from(document.querySelectorAll('label,dt,th,legend,p,span,div,strong,h2,h3,h4'))
+                .filter(title => title.getClientRects().length && normalizeLabel(title.innerText) === caption);
+              const found = new Set();
+              for (const title of titles) {
+                const roots = [title, title.nextElementSibling, title.parentElement];
+                for (const root of roots) {
+                  if (!root || root.matches('form,main,body')) continue;
+                  const matches = controls.filter(control => control.matches(selector) && root.contains(control));
+                  if (matches.length === 1 || (caption === '有効期限' && matches.length === 2)) {
+                    for (const match of matches) found.add(match);
+                    break;
+                  }
+                }
+              }
+              return controls.filter(control => found.has(control));
+            }
+            const expirySelects = controlsUnderCaption('有効期限', 'select');
+            const numberInputs = controlsUnderCaption('カード番号', 'input:not([type=radio],[type=checkbox],[type=button],[type=submit])');
             const fields = [['cc-number', 'カード番号', [digits]], ['cc-exp', '有効期限', [month + '/' + year]],
               ['cc-exp-month', '有効期限月', [month, String(Number(month))]],
-              ['cc-exp-year', '有効期限年', ['20' + year, year]], ['cc-name', 'カード名義', [name]]];
+              ['cc-exp-year', '有効期限年', ['20' + year, year]], ['cc-name', 'カード名義', [name]],
+              ['cc-csc', 'セキュリティコード', [code]]];
+            if (code) {
+              await clearPendingCard();
+              securityCode.value = '';
+            }
             let count = 0;
             for (const [token, caption, values] of fields) {
-              const matches = controls.filter(control => control.autocomplete?.split(/\s+/).includes(token) ||
+              let matches = controls.filter(control => control.autocomplete?.split(/\s+/).includes(token) ||
                 (!control.autocomplete?.startsWith('cc-') && Array.from(control.labels || []).some(label =>
                   label.innerText.normalize('NFKC').replace(/\s+/g, '') === caption)));
-              if (matches.length !== 1 || matches[0].value.trim()) continue;
+              if (!matches.length && token === 'cc-number') {
+                matches = numberInputs.filter(input => (input.maxLength < 0 || input.maxLength >= 13) &&
+                  !/cvc|cvv|security/i.test([input.id, input.name, input.autocomplete].join(' ')) &&
+                  !Array.from(input.labels || []).some(label => normalizeLabel(label.innerText).includes('セキュリティコード')));
+              }
+              if (!matches.length && token === 'cc-csc') {
+                matches = controlsUnderCaption(caption, 'input[type=text],input[type=tel],input[type=password],input[type=number]')
+                  .filter(input => [3, 4].includes(input.maxLength) || /cvc|cvv|security/i.test(input.id + ' ' + input.name));
+              }
+              if (!matches.length && expirySelects.length === 2) {
+                if (token === 'cc-exp-month') matches = [expirySelects[0]];
+                if (token === 'cc-exp-year') matches = [expirySelects[1]];
+              }
+              if (matches.length !== 1) continue;
               const [control] = matches;
+              const current = control.value.trim();
+              const placeholder = control.tagName === 'SELECT' && /^(?:--+|選択(?:してください)?)$/.test(control.selectedOptions[0]?.textContent.trim() || '');
+              if (current && !placeholder) continue;
               const value = control.tagName === 'SELECT'
                 ? values.find(candidate => Array.from(control.options).some(option => !option.disabled && option.value === candidate))
                 : control.type === 'month' ? '20' + year + '-' + month : values[0];
@@ -528,11 +591,24 @@
             }
             report(count ? 'カード欄に入力しました。残りの項目と注文内容をご確認ください。'
               : '入力できるカード欄が見つかりません。公式画面をご確認ください。');
-          });
+          }
+          cardButton('購入画面のカード欄へ入力', fillCard);
+          if (sessionStorage.getItem(pendingCardKey)) {
+            const watch = new MutationObserver(tryPreparedCard);
+            const deadline = setTimeout(() => watch.disconnect(), 15000);
+            function tryPreparedCard() {
+              if (!findControl(/^(?:ご)?注文を確定する$/)) return;
+              watch.disconnect();
+              clearTimeout(deadline);
+              void fillCard().catch(() => report('準備済みカードを入力できませんでした。'));
+            }
+            watch.observe(document.body, {subtree: true, childList: true, attributes: true});
+            tryPreparedCard();
+          }
         }
         const cardNote = document.createElement('div');
         cardNote.className = 'desc';
-        cardNote.textContent = '入力後に「カードをこのタブで準備」を押し、同じタブで購入画面へ進んでください。セキュリティコードは公式欄で入力します。';
+        cardNote.textContent = '入力後に「カードをこのタブで準備」を押し、同じタブで購入画面へ進むと準備済みカードを入力します。セキュリティコードは今回の購入用で、準備から15分以内に入力できます。注文確定は手動です。';
         profile.append(cardSettings, cardNote);
         void (async () => {
           try {
