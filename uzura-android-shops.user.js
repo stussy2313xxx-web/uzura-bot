@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          うずら BOT Android — ショップ・購入通知
 // @namespace     uzura.bot.android.shops
-// @version       2.1.44.10957
+// @version       2.1.44.10961
 // @description   Android版。Shopify、Supreme、HUMAN MADE、Buffer、Palace、and STなどの購入補助とDiscord購入通知。
 // @match         https://*/*
 // @run-at        document-start
@@ -104,6 +104,22 @@
       sessionStorage.removeItem(reviewKey + '-step');
     }
 
+    function applyCreditCardDefault() {
+      if (!billys || !reviewOrder) return;
+      const normalize = text => text.normalize('NFKC').replace(/\s+/g, '');
+      const radios = Array.from(document.querySelectorAll('input[type="radio"][name]'));
+      const matches = radios.filter(radio =>
+        !radio.matches(':disabled,[aria-disabled="true"]') &&
+        Array.from(radio.labels || []).some(label => label.getClientRects().length &&
+          getComputedStyle(label).visibility === 'visible' &&
+          normalize(label.innerText) === 'クレジットカード'));
+      if (matches.length !== 1) return;
+      const [radio] = matches;
+      if (radios.some(other => other.name === radio.name && other.form === radio.form && other.checked)) return;
+      radio.click();
+      if (radio.checked) report('お支払い方法にクレジットカードを選択しました。');
+    }
+
     function applyBillysDeliveryDefault() {
       if (!billys || !reviewOrder) return;
       const radios = Array.from(document.querySelectorAll('input[type="radio"][name]'));
@@ -145,6 +161,7 @@
           ? findControl(/^(?:ご購入手続きへ(?:進む)?|レジに進む|購入手続きへ(?:進む)?|ご注文手続きへ(?:進む)?)(?:\s+\d{1,2}月\d{1,2}日までに出荷予定)?$/)
           : findControl(/^(?:ご?注文内容を確認する|ご?注文(?:内容)?の確認へ(?:進む)?|カートの確認へ進む|確認画面へ進む)$/);
         if (!next) return;
+        applyCreditCardDefault();
         if (next.form && !next.form.checkValidity()) {
           finish('公式画面の必須項目を入力してから続けてください。');
           return;
@@ -394,7 +411,113 @@
             saveBrand.disabled = false;
           }
         };
-        profile.append(row, saveBrand);
+        const paymentTitle = document.createElement('b');
+        paymentTitle.className = 'r';
+        paymentTitle.textContent = '支払い方法：クレジットカード';
+        profile.append(paymentTitle, row, saveBrand);
+        const cardKey = 'uzura-billys-encrypted-card-v1';
+        const cardSettings = document.createElement('div');
+        function cardInput(label, numeric = false, masked = true) {
+          const input = document.createElement('input');
+          input.type = masked ? 'password' : 'text';
+          input.autocomplete = 'off';
+          if (numeric) input.inputMode = 'numeric';
+          input.placeholder = label;
+          input.setAttribute('aria-label', label);
+          const row = document.createElement('div');
+          row.className = 'r';
+          row.append(input);
+          cardSettings.append(row);
+          return input;
+        }
+        const number = cardInput('カード番号', true);
+        const expiry = cardInput('有効期限 MM/YY');
+        const cardholder = cardInput('カード名義（任意）', false, false);
+        const passphrase = cardInput('解除用パスフレーズ（12文字以上）');
+        function cardButton(label, handler) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.style.marginTop = '6px';
+          button.textContent = label;
+          button.onclick = async () => {
+            for (const control of cardSettings.querySelectorAll('button')) control.disabled = true;
+            try { await handler(); }
+            catch { report('カード情報を処理できませんでした。入力内容をご確認ください。'); }
+            finally {
+              passphrase.value = '';
+              for (const control of cardSettings.querySelectorAll('button')) control.disabled = false;
+            }
+          };
+          cardSettings.append(button);
+        }
+        async function deriveCardKey(salt) {
+          if (passphrase.value.length < 12) throw new Error('passphrase');
+          const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(passphrase.value),
+            'PBKDF2', false, ['deriveKey']);
+          return crypto.subtle.deriveKey({name: 'PBKDF2', salt, iterations: 600000, hash: 'SHA-256'},
+            material, {name: 'AES-GCM', length: 256}, false, ['encrypt', 'decrypt']);
+        }
+        cardButton('カードを暗号化して保存', async () => {
+          const digits = number.value.normalize('NFKC').replace(/[\s-]/g, '');
+          const date = expiry.value.normalize('NFKC').trim().match(/^(0[1-9]|1[0-2])\/(\d{2})$/);
+          if (!/^\d{13,19}$/.test(digits) || !date) throw new Error('card');
+          const salt = crypto.getRandomValues(new Uint8Array(16));
+          const iv = crypto.getRandomValues(new Uint8Array(12));
+          const key = await deriveCardKey(salt);
+          const data = await crypto.subtle.encrypt({name: 'AES-GCM', iv}, key,
+            new TextEncoder().encode(JSON.stringify([digits, date[1], date[2], cardholder.value.trim()])));
+          await GM.setValue(cardKey, {salt: Array.from(salt), iv: Array.from(iv), data: Array.from(new Uint8Array(data))});
+          number.value = '';
+          expiry.value = '';
+          cardholder.value = '';
+          report('カード情報を暗号化して保存しました。');
+        });
+        cardButton('保存済みカードを削除', async () => {
+          await GM.setValue(cardKey, null);
+          number.value = '';
+          expiry.value = '';
+          cardholder.value = '';
+          report('保存済みカードを削除しました。');
+        });
+        if (checkout) {
+          cardButton('解除してカード欄へ入力', async () => {
+            const saved = await GM.getValue(cardKey, null);
+            if (!saved) { report('登録済みカードがありません。'); return; }
+            const key = await deriveCardKey(Uint8Array.from(saved.salt));
+            const data = await crypto.subtle.decrypt({name: 'AES-GCM', iv: Uint8Array.from(saved.iv)},
+              key, Uint8Array.from(saved.data));
+            const [digits, month, year, name = ''] = JSON.parse(new TextDecoder().decode(data));
+            const controls = Array.from(document.querySelectorAll('input,select')).filter(control =>
+              !control.matches(':disabled,[readonly],[type=hidden]') &&
+              control.getClientRects().length && getComputedStyle(control).visibility === 'visible');
+            const fields = [['cc-number', 'カード番号', [digits]], ['cc-exp', '有効期限', [month + '/' + year]],
+              ['cc-exp-month', '有効期限月', [month, String(Number(month))]],
+              ['cc-exp-year', '有効期限年', ['20' + year, year]], ['cc-name', 'カード名義', [name]]];
+            let count = 0;
+            for (const [token, caption, values] of fields) {
+              const matches = controls.filter(control => control.autocomplete?.split(/\s+/).includes(token) ||
+                (!control.autocomplete?.startsWith('cc-') && Array.from(control.labels || []).some(label =>
+                  label.innerText.normalize('NFKC').replace(/\s+/g, '') === caption)));
+              if (matches.length !== 1 || matches[0].value.trim()) continue;
+              const [control] = matches;
+              const value = control.tagName === 'SELECT'
+                ? values.find(candidate => Array.from(control.options).some(option => !option.disabled && option.value === candidate))
+                : control.type === 'month' ? '20' + year + '-' + month : values[0];
+              if (!value) continue;
+              control.value = value;
+              if (!control.value) continue;
+              control.dispatchEvent(new Event('input', {bubbles: true}));
+              control.dispatchEvent(new Event('change', {bubbles: true}));
+              count++;
+            }
+            report(count ? 'カード欄に入力しました。残りの項目と注文内容をご確認ください。'
+              : '入力できるカード欄が見つかりません。公式画面をご確認ください。');
+          });
+        }
+        const cardNote = document.createElement('div');
+        cardNote.className = 'desc';
+        cardNote.textContent = 'カード情報は暗号化して保存します。セキュリティコードは公式の購入画面で入力してください。';
+        profile.append(cardSettings, cardNote);
         void (async () => {
           try {
             const saved = await GM.getValue(brandKey, '');
@@ -447,28 +570,28 @@
       const key = 'uzura-vans-search';
       const sizeKey = 'uzura-storefront-cart-size';
       let reservation;
-      function prepareProduct(url) {
+      function prepareProduct(url, startedAt) {
         if (size.value.trim()) {
           sessionStorage.setItem(sizeKey, JSON.stringify({
-            pathname: url.pathname, cm: Number(size.value), expires: Date.now() + 120000
+            pathname: url.pathname, cm: Number(size.value), expires: abcMart ? Date.now() + 120000 : startedAt + 60000
           }));
         }
         if (url.href === location.href) location.reload();
         else location.assign(url.href);
       }
-      function lookup(query) {
+      function lookup(query, startedAt = Date.now()) {
         if (/^https?:/i.test(query) || abcMart || billys) {
           let url;
           try { url = new URL(query); } catch {}
           if (url?.origin === location.origin && productPath.test(url.pathname)) {
-            prepareProduct(url);
+            prepareProduct(url, startedAt);
           } else {
             report('このストアの公式商品URLを入力してください。');
           }
           return;
         }
         if (location.pathname !== '/new_arrival/') {
-          sessionStorage.setItem(key, JSON.stringify({query, size: size.value}));
+          sessionStorage.setItem(key, JSON.stringify({query, size: size.value, startedAt}));
           location.assign('/new_arrival/');
           return;
         }
@@ -480,7 +603,7 @@
           const name = [link.textContent, link.getAttribute('aria-label'), link.querySelector('img')?.alt].join(' ');
           if (normalize(name + ' ' + url.pathname).includes(normalize(query))) matches.set(url.pathname, url);
         }
-        if (matches.size === 1) prepareProduct(matches.values().next().value);
+        if (matches.size === 1) prepareProduct(matches.values().next().value, startedAt);
         else report(matches.size ? '複数の商品が一致しました。品番で絞ってください。' : '現在の新着一覧に一致する商品がありません。');
       }
       function start(scheduled) {
@@ -502,8 +625,8 @@
         let at = Date.parse(jstDay + 'T' + time.value + ':00+09:00');
         if (at < now) at += 86400000;
         reservation = setTimeout(() => {
-          if (abcMart || billys || /^https?:/i.test(query)) { lookup(query); return; }
-          sessionStorage.setItem(key, JSON.stringify({query, size: size.value}));
+          if (abcMart || billys || /^https?:/i.test(query)) { lookup(query, at); return; }
+          sessionStorage.setItem(key, JSON.stringify({query, size: size.value, startedAt: at}));
           if (location.pathname === '/new_arrival/') location.reload();
           else location.assign('/new_arrival/');
         }, at - now);
@@ -527,7 +650,7 @@
           const saved = JSON.parse(pending);
           panel.hidden = false;
           size.value = saved.size;
-          lookup(saved.query);
+          lookup(saved.query, saved.startedAt);
         };
         if (document.readyState === 'complete') setTimeout(run, 0);
         else window.addEventListener('load', run, {once: true});
@@ -542,22 +665,42 @@
         if (target.pathname === location.pathname && target.expires > Date.now()) {
           setTimeout(() => {
             panel.hidden = false;
+            function watchSize(check) {
+              const expired = () => stop('1分以内に指定サイズをカートへ追加できませんでした。');
+              const verify = () => {
+                if (location.pathname !== target.pathname) { stop('商品ページが変わったため停止しました。'); return; }
+                if (Date.now() >= target.expires) { expired(); return; }
+                check();
+              };
+              action.textContent = '停止';
+              report('指定サイズとカートボタンの表示を確認しています（最大1分）。');
+              observer = new MutationObserver(verify);
+              observer.observe(document.body, {subtree: true, childList: true, attributes: true, characterData: true});
+              timer = setTimeout(expired, Math.max(0, target.expires - Date.now()));
+              verify();
+            }
             if (billys) {
-              const form = document.querySelector('#cartin_form');
-              const sizes = Array.from(form?.querySelectorAll('input[type="radio"]') || []).filter(input =>
-                !input.matches(':disabled,[aria-disabled="true"]') &&
-                Array.from(input.labels || []).some(label => {
-                  const match = label.textContent.normalize('NFKC').match(/\(\s*(\d+(?:\.\d+)?)\s*cm\s*\)/i);
-                  return match && Number(match[1]) === target.cm && label.getClientRects().length;
-                }));
-              if (sizes.length !== 1) { stop('指定サイズを選べません。'); return; }
-              sizes[0].click();
-              const add = sizes[0].checked && findControl(/^カートに入れる$/, form);
-              if (!add) { stop('指定サイズをカートに追加できません。'); return; }
-              clearReview();
-              sessionStorage.setItem(reviewKey, String(Date.now() + 120000));
-              stop('指定サイズのカートボタンを押しました。');
-              add.click();
+              let clickedSize;
+              watchSize(() => {
+                const form = document.querySelector('#cartin_form');
+                const sizes = Array.from(form?.querySelectorAll('input[type="radio"]') || []).filter(input =>
+                  !input.matches(':disabled,[aria-disabled="true"]') &&
+                  Array.from(input.labels || []).some(label => {
+                    const match = label.textContent.normalize('NFKC').match(/\(\s*(\d+(?:\.\d+)?)\s*cm\s*\)/i);
+                    return match && Number(match[1]) === target.cm && label.getClientRects().length;
+                  }));
+                if (sizes.length !== 1) return;
+                if (!sizes[0].checked && clickedSize !== sizes[0]) {
+                  clickedSize = sizes[0];
+                  clickedSize.click();
+                }
+                const add = sizes[0].checked && findControl(/^カートに入れる$/, form);
+                if (!add) return;
+                clearReview();
+                sessionStorage.setItem(reviewKey, String(Date.now() + 120000));
+                stop('指定サイズのカートボタンを押しました。');
+                add.click();
+              });
               return;
             }
             if (abcMart) {
@@ -594,14 +737,7 @@
               sizeControl.click();
               verify();
             };
-            action.textContent = '停止';
-            report('VANSの公式ページで指定サイズとカートボタンを確認しています。');
-            observer = new MutationObserver(verify);
-            observer.observe(document.body, {subtree: true, childList: true, attributes: true, characterData: true});
-            timer = setTimeout(() => stop(sizeClicked
-              ? 'サイズ選択後にカートボタンを確認できませんでした。'
-              : '指定サイズの選択ボタンを確認できませんでした。在庫とサイズをご確認ください。'), 15000);
-            verify();
+            watchSize(verify);
           }, 0);
         }
       }
@@ -624,6 +760,12 @@
         }
       }
       root.append(launcher);
+      if (billys && reviewOrder) {
+        applyCreditCardDefault();
+        if (document.readyState !== 'complete') {
+          window.addEventListener('load', applyCreditCardDefault, {once: true});
+        }
+      }
       if (billys && reviewOrder) {
         applyBillysDeliveryDefault();
         if (document.readyState !== 'complete') {
