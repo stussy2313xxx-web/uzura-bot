@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          うずら BOT Android — ショップ・購入通知
 // @namespace     uzura.bot.android.shops
-// @version       2.1.44.10962
+// @version       2.1.44.10963
 // @description   Android版。Shopify、Supreme、HUMAN MADE、Buffer、Palace、and STなどの購入補助とDiscord購入通知。
 // @match         https://*/*
 // @run-at        document-start
@@ -417,13 +417,13 @@
         paymentTitle.textContent = '支払い方法：クレジットカード';
         profile.append(paymentTitle, row, saveBrand);
         const cardKey = 'uzura-billys-encrypted-card-v1';
+        const pendingCardKey = 'uzura-billys-pending-card:' + location.origin;
         const cardSettings = document.createElement('div');
         function cardInput(label, token, numeric = false) {
           const input = document.createElement('input');
           input.type = 'text';
           input.name = token;
           input.autocomplete = token;
-          input.disabled = !checkout;
           if (numeric) input.inputMode = 'numeric';
           input.placeholder = label;
           input.setAttribute('aria-label', label);
@@ -449,21 +449,54 @@
           };
           cardSettings.append(button);
         }
-        cardButton('カード情報を消去', async () => {
+        function readCardFields() {
+          const digits = number.value.normalize('NFKC').replace(/[\s-]/g, '');
+          const date = expiry.value.normalize('NFKC').trim().match(/^(0?[1-9]|1[0-2])\s*\/\s*(?:20)?(\d{2})$/);
+          if (!/^\d{13,19}$/.test(digits) || !date) throw new Error('card');
+          return [digits, date[1].padStart(2, '0'), date[2], cardholder.value.trim()];
+        }
+        function clearCardFields() {
           number.value = '';
           expiry.value = '';
           cardholder.value = '';
+        }
+        async function clearPendingCard() {
+          sessionStorage.removeItem(pendingCardKey);
+          await GM.setValue(pendingCardKey, null);
+        }
+        cardButton('カードをこのタブで準備', async () => {
+          const card = readCardFields();
+          const raw = crypto.getRandomValues(new Uint8Array(32));
+          const iv = crypto.getRandomValues(new Uint8Array(12));
+          const key = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt']);
+          const data = await crypto.subtle.encrypt({name: 'AES-GCM', iv}, key,
+            new TextEncoder().encode(JSON.stringify(card)));
+          await GM.setValue(pendingCardKey, {iv: Array.from(iv), data: Array.from(new Uint8Array(data))});
+          sessionStorage.setItem(pendingCardKey, JSON.stringify(Array.from(raw)));
+          clearCardFields();
+          report('カードを準備しました。同じタブで購入画面へ進んでください。');
+        });
+        cardButton('カード情報を消去', async () => {
+          clearCardFields();
+          await clearPendingCard();
           await GM.setValue(cardKey, null);
-          report('BOT欄と旧版の保存済みカードを消去しました。');
+          report('BOT欄と準備済みカードを消去しました。');
         });
         if (checkout) {
-          cardButton('購入画面のカード欄へ入力', () => {
-            const digits = number.value.normalize('NFKC').replace(/[\s-]/g, '');
-            const date = expiry.value.normalize('NFKC').trim().match(/^(0?[1-9]|1[0-2])\s*\/\s*(?:20)?(\d{2})$/);
-            if (!/^\d{13,19}$/.test(digits) || !date) throw new Error('card');
-            const month = date[1].padStart(2, '0');
-            const year = date[2];
-            const name = cardholder.value.trim();
+          cardButton('購入画面のカード欄へ入力', async () => {
+            let card;
+            if (number.value.trim() || expiry.value.trim()) {
+              card = readCardFields();
+            } else {
+              const raw = JSON.parse(sessionStorage.getItem(pendingCardKey) || 'null');
+              const pending = raw && await GM.getValue(pendingCardKey, null);
+              if (!pending) { report('カードを入力するか、このタブでカードを準備してください。'); return; }
+              const key = await crypto.subtle.importKey('raw', Uint8Array.from(raw), 'AES-GCM', false, ['decrypt']);
+              const data = await crypto.subtle.decrypt({name: 'AES-GCM', iv: Uint8Array.from(pending.iv)},
+                key, Uint8Array.from(pending.data));
+              card = JSON.parse(new TextDecoder().decode(data));
+            }
+            const [digits, month, year, name] = card;
             const controls = Array.from(document.querySelectorAll('input,select')).filter(control =>
               !control.matches(':disabled,[readonly],[type=hidden]') &&
               control.getClientRects().length && getComputedStyle(control).visibility === 'visible');
@@ -488,9 +521,8 @@
               count++;
             }
             if (count) {
-              number.value = '';
-              expiry.value = '';
-              cardholder.value = '';
+              clearCardFields();
+              await clearPendingCard();
             }
             report(count ? 'カード欄に入力しました。残りの項目と注文内容をご確認ください。'
               : '入力できるカード欄が見つかりません。公式画面をご確認ください。');
@@ -498,7 +530,7 @@
         }
         const cardNote = document.createElement('div');
         cardNote.className = 'desc';
-        cardNote.textContent = '事前登録はSafariの自動入力を使います。購入画面で保存済みカードを選んでください。セキュリティコードは公式欄で入力します。';
+        cardNote.textContent = '入力後に「カードをこのタブで準備」を押し、同じタブで購入画面へ進んでください。セキュリティコードは公式欄で入力します。';
         profile.append(cardSettings, cardNote);
         void (async () => {
           try {
