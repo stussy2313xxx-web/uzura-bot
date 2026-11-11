@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         うずら BOT — Mellojoy・Shop対応
 // @namespace    uzura.mellojoy.shop
-// @version      2.1.44.10943
+// @version      2.1.44.10944
 // @updateURL    https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.meta.js
 // @downloadURL  https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.user.js
 // @description  Mellojoy・Shopify・Supreme・HUMAN MADE・Buffer・Palace・and STの購入補助。購入成功時のDiscord通知に対応。
@@ -13,9 +13,11 @@
 // @connect      discord.com
 // @inject-into  content
 // ==/UserScript==
-// Topps JP uses storefront controls rather than Shopify's standard cart endpoints.
-(function uzuraTopps() {
-  if (window.top !== window || location.hostname !== 'jp.topps.com') return;
+// Storefronts with their own cart controls.
+(function uzuraStorefrontCart() {
+  const vans = /^(?:www\.)?vans\.co\.jp$/.test(location.hostname);
+  if (window.top !== window || (!vans && location.hostname !== 'jp.topps.com')) return;
+  const store = vans ? 'VANS JP' : 'Topps JP';
   function mount() {
     const panel = document.createElement('aside');
     panel.style.cssText = 'position:fixed;right:12px;bottom:24px;z-index:2147483647;background:#142139;color:white;padding:12px;border-radius:10px;font:15px system-ui;max-width:85vw';
@@ -33,23 +35,27 @@
       observer?.disconnect();
       observer = null;
       clearTimeout(timer);
-      action.textContent = 'Topps JP｜カート操作';
+      action.textContent = store + '｜すぐ実行';
       status.textContent = message;
     }
 
     function findControl(label) {
-      return Array.from(document.querySelectorAll('button, a')).find(element =>
+      return Array.from(document.querySelectorAll('button, a, input[type=submit], input[type=button]')).find(element =>
         !panel.contains(element) && !element.matches(':disabled,[aria-disabled="true"]') &&
         element.getClientRects().length && getComputedStyle(element).visibility === 'visible' &&
-        label.test(element.textContent.trim().replace(/\s+/g, ' ')));
+        label.test((element.getAttribute('aria-label') || element.value || element.textContent).replace(/[\uE000-\uF8FF]/g, '').trim().replace(/\s+/g, ' ')));
     }
 
     action.addEventListener('click', () => {
       if (observer) { stop('停止しました'); return; }
       path = location.pathname;
       const cart = /^\/(?:checkout\/)?cart\/?$/.test(path);
+      if (vans && !cart && !path.startsWith('/p/')) {
+        stop('公式の商品ページを開き、サイズを選択してください');
+        return;
+      }
       const label = cart
-        ? /^(?:チェックアウトに進む|チェックアウト|ご購入手続きへ|レジに進む|Checkout)$/i
+        ? /^(?:チェックアウトに進む|チェックアウト|ご購入手続きへ|レジに進む|購入手続きへ|ご注文手続きへ|Checkout)$/i
         : /^(?:カートに入れる|カートに追加|Add to cart)$/i;
       function check() {
         if (location.pathname !== path) { stop('ページが変わったため停止しました'); return; }
@@ -65,10 +71,75 @@
       timer = setTimeout(() => stop('操作できるボタンが見つかりませんでした'), 120000);
       check();
     });
+    if (vans) {
+      const search = document.createElement('form');
+      const keyword = document.createElement('input');
+      keyword.placeholder = '商品名または品番';
+      keyword.required = true;
+      keyword.setAttribute('aria-label', '商品名または品番');
+      const time = document.createElement('input');
+      time.type = 'time';
+      time.setAttribute('aria-label', '発売時刻（日本時間、空欄ですぐ検索）');
+      const submit = document.createElement('button');
+      submit.textContent = '新着検索・予約';
+      search.append(keyword, time, submit);
+      panel.prepend(search);
+      const key = 'uzura-vans-search';
+      let reservation;
+      function lookup(query) {
+        if (location.pathname !== '/new_arrival/') {
+          sessionStorage.setItem(key, query);
+          location.assign('/new_arrival/');
+          return;
+        }
+        const normalize = value => value.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();
+        const matches = new Map();
+        for (const link of document.querySelectorAll('a[href*="/p/"]')) {
+          const url = new URL(link.href);
+          if (url.origin !== location.origin || !url.pathname.startsWith('/p/')) continue;
+          const name = [link.textContent, link.getAttribute('aria-label'), link.querySelector('img')?.alt].join(' ');
+          if (normalize(name + ' ' + url.pathname).includes(normalize(query))) matches.set(url.pathname, url);
+        }
+        if (matches.size === 1) location.assign(matches.values().next().value.href);
+        else status.textContent = matches.size ? '複数の商品が一致しました。品番で絞ってください。' : '現在の新着一覧に一致する商品がありません。';
+      }
+      search.addEventListener('submit', event => {
+        event.preventDefault();
+        clearTimeout(reservation);
+        const query = keyword.value.trim();
+        if (!query) return;
+        if (!time.value) { lookup(query); return; }
+        const now = Date.now();
+        const jstDay = new Date(now + 9 * 3600000).toISOString().slice(0, 10);
+        let at = Date.parse(jstDay + 'T' + time.value + ':00+09:00');
+        if (at < now) at += 86400000;
+        reservation = setTimeout(() => {
+          sessionStorage.setItem(key, query);
+          if (location.pathname === '/new_arrival/') location.reload();
+          else location.assign('/new_arrival/');
+        }, at - now);
+        status.textContent = '日本時間 ' + time.value + ' に新着一覧を確認します。';
+      });
+      const pending = sessionStorage.getItem(key);
+      if (pending && location.pathname === '/new_arrival/') {
+        sessionStorage.removeItem(key);
+        const run = () => { panel.hidden = false; lookup(pending); };
+        if (document.readyState === 'complete') setTimeout(run, 0);
+        else window.addEventListener('load', run, {once: true});
+      }
+    }
     stop('商品ページまたはカートで使えます');
     document.body.append(panel);
+    if (vans) {
+      const bubble = synovaBubble('uzura-vans-launcher', () => {
+        panel.hidden = !panel.hidden;
+      });
+      panel.hidden = true;
+      bubble.show(false, false);
+      panel.style.bottom = 'calc(env(safe-area-inset-bottom) + 152px)';
+    }
   }
-  if (document.body) mount();
+  if (document.readyState !== 'loading') queueMicrotask(mount);
   else document.addEventListener('DOMContentLoaded', mount, {once: true});
 })();
 
