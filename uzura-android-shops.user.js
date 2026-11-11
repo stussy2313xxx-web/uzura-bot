@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          うずら BOT Android — ショップ・購入通知
 // @namespace     uzura.bot.android.shops
-// @version       2.1.44.10954
+// @version       2.1.44.10955
 // @description   Android版。Shopify、Supreme、HUMAN MADE、Buffer、Palace、and STなどの購入補助とDiscord購入通知。
 // @match         https://*/*
 // @run-at        document-start
@@ -43,15 +43,18 @@
       observer?.disconnect();
       observer = null;
       clearTimeout(timer);
-      action.textContent = abcMart && (abcCart || abcOrder) ? 'カートの確認へ進む' : vans || abcMart || billys ? '商品ページ・カートを操作' : store + '｜すぐ実行';
+      action.textContent = reviewStore && (reviewCart || reviewOrder) ? (billys ? 'ご注文内容の確認へ進む' : 'カートの確認へ進む') : vans || abcMart || billys ? '商品ページ・カートを操作' : store + '｜すぐ実行';
       report(message);
     }
+
+    const vansAddLabel = /^(?:カートに(?:入れる|追加(?:する)?)|カートへ(?:入れる|追加(?:する)?)|Add to cart)$/i;
 
     function findControl(label, root = document) {
       return Array.from(root.querySelectorAll('button, a, input[type=submit], input[type=button], input[type=image]')).find(element =>
         !panel.contains(element) && !element.matches(':disabled,[aria-disabled="true"]') &&
         element.getClientRects().length && getComputedStyle(element).visibility === 'visible' &&
-        label.test((element.getAttribute('aria-label') || element.value || element.getAttribute('alt') || element.textContent).replace(/[\uE000-\uF8FF]/g, '').trim().replace(/\s+/g, ' ')));
+        [element.innerText, element.getAttribute('aria-label'), element.value, element.getAttribute('alt')].some(value =>
+          value && label.test(value.normalize('NFKC').replace(/[\uE000-\uF8FF]/g, '').trim().replace(/\s+/g, ' '))));
     }
 
     let stopVansHandoff;
@@ -91,49 +94,51 @@
       cartObserver.observe(document.body, {subtree: true, childList: true, attributes: true, characterData: true});
     }
 
-    const abcReviewKey = 'uzura-abc-review-until';
-    const abcCart = location.pathname === '/shop/cart/cart.aspx';
-    const abcOrder = /^\/shop\/order\//i.test(location.pathname);
+    const reviewStore = abcMart || billys;
+    const reviewKey = abcMart ? 'uzura-abc-review-until' : 'uzura-billys-review-until';
+    const reviewCart = location.pathname === '/shop/cart/cart.aspx';
+    const reviewOrder = /^\/shop\/order\//i.test(location.pathname);
 
-    function clearAbcReview() {
-      sessionStorage.removeItem(abcReviewKey);
-      sessionStorage.removeItem(abcReviewKey + '-step');
+    function clearReview() {
+      sessionStorage.removeItem(reviewKey);
+      sessionStorage.removeItem(reviewKey + '-step');
     }
 
-    function continueAbcReview() {
-      if (!abcMart || (!abcCart && !abcOrder)) return;
+    function continueReview() {
+      if (!reviewStore || (!reviewCart && !reviewOrder)) return;
       const reachedReview = () =>
         Array.from(document.querySelectorAll('h1,h2,h3')).some(heading =>
-          heading.textContent.trim() === 'カートの確認') ||
+          !reviewCart && heading.textContent.trim() === (billys ? 'ご注文内容の確認' : 'カートの確認')) ||
         Boolean(findControl(/^(?:ご注文を確定する|注文を確定する|d払い（ドコモ）へ|au PAYへ|PayPayへ)$/i));
       function finish(message) {
-        clearAbcReview();
+        clearReview();
         stop(message);
       }
       function check() {
         if (reachedReview()) {
-          finish('Step3「カートの確認」に到着しました。内容を確認してご自身で確定してください。');
+          finish(billys ? '「ご注文内容の確認」に到着しました。注文確定は手動です。'
+            : 'Step3「カートの確認」に到着しました。内容を確認してご自身で確定してください。');
           return;
         }
         if (findControl(/^ログイン$/) || document.querySelector('input[type=password]:not([disabled])')) {
           finish('公式サイトにログインしてから購入手続きを続けてください。');
           return;
         }
-        const next = abcCart
-          ? findControl(/^(?:ご購入手続きへ(?:進む)?|レジに進む|購入手続きへ(?:進む)?|ご注文手続きへ(?:進む)?)$/)
-          : findControl(/^(?:ご?注文内容を確認する|ご?注文内容の確認へ進む|カートの確認へ進む|確認画面へ進む)$/);
+        const next = reviewCart
+          ? findControl(/^(?:ご購入手続きへ(?:進む)?|レジに進む|購入手続きへ(?:進む)?|ご注文手続きへ(?:進む)?)(?:\s+\d{1,2}月\d{1,2}日までに出荷予定)?$/)
+          : findControl(/^(?:ご?注文内容を確認する|ご?注文内容の確認へ(?:進む)?|カートの確認へ進む|確認画面へ進む)$/);
         if (!next) return;
         if (next.form && !next.form.checkValidity()) {
           finish('公式画面の必須項目を入力してから続けてください。');
           return;
         }
-        const step = abcCart ? 'cart' : 'order';
-        if (sessionStorage.getItem(abcReviewKey + '-step') === step) {
+        const step = reviewCart ? 'cart' : 'order';
+        if (sessionStorage.getItem(reviewKey + '-step') === step) {
           finish('公式画面で入力内容を確認し、手続きを続けてください。');
           return;
         }
-        sessionStorage.setItem(abcReviewKey + '-step', step);
-        stop(abcCart ? '公式の購入手続きへ進みます。' : '公式の確認画面へ進みます。');
+        sessionStorage.setItem(reviewKey + '-step', step);
+        stop(reviewCart ? '公式の購入手続きへ進みます。' : '公式の確認画面へ進みます。');
         next.click();
       }
       action.textContent = '停止';
@@ -145,11 +150,11 @@
     }
 
     action.addEventListener('click', () => {
-      if (observer) { if (abcMart) clearAbcReview(); stop('停止しました'); return; }
-      if (abcMart && (abcCart || abcOrder)) {
-        clearAbcReview();
-        sessionStorage.setItem(abcReviewKey, String(Date.now() + 120000));
-        continueAbcReview();
+      if (observer) { if (reviewStore) clearReview(); stop('停止しました'); return; }
+      if (reviewStore && (reviewCart || reviewOrder)) {
+        clearReview();
+        sessionStorage.setItem(reviewKey, String(Date.now() + 120000));
+        continueReview();
         return;
       }
       path = location.pathname;
@@ -161,7 +166,7 @@
       }
       const label = cart
         ? /^(?:チェックアウトに進む|チェックアウト|ご購入手続きへ|レジに進む|購入手続きへ|ご注文手続きへ|購入手続きへ進む(?: .*)?|Checkout)$/i
-        : /^(?:カートに入れる|カートに追加|Add to cart)$/i;
+        : vansAddLabel;
       function check() {
         if (location.pathname !== path) { stop('ページが変わったため停止しました'); return; }
         const control = findControl(label);
@@ -360,7 +365,7 @@
       panel.append(search, output, action);
       action.removeAttribute('style');
       action.hidden = !/^(?:\/(?:checkout\/)?cart\/?|\/shop\/cart\/cart\.aspx)$/.test(location.pathname);
-      if (abcMart && (abcCart || abcOrder)) {
+      if (reviewStore && (reviewCart || reviewOrder)) {
         action.hidden = false;
       }
       if (productPath.test(location.pathname)) keyword.value = location.href;
@@ -407,6 +412,10 @@
         clearTimeout(reservation);
         const query = keyword.value.trim();
         if (!query) return;
+        if (vans && !size.value.trim()) {
+          report('サイズ（cm）を入力してください。例 26.5');
+          return;
+        }
         if (size.value.trim() && !/^(?:[1-3]\d)(?:\.[05])?$/.test(size.value.trim())) {
           report('サイズはcmで入力してください（例 27.5）。');
           return;
@@ -431,7 +440,7 @@
       });
       runNow.onclick = () => start(false);
       cancel.onclick = () => {
-        if (abcMart) clearAbcReview();
+        if (reviewStore) clearReview();
         stopVansHandoff?.();
         clearTimeout(reservation);
         stop('停止しました');
@@ -470,6 +479,8 @@
               sizes[0].click();
               const add = sizes[0].checked && findControl(/^カートに入れる$/, form);
               if (!add) { stop('指定サイズをカートに追加できません。'); return; }
+              clearReview();
+              sessionStorage.setItem(reviewKey, String(Date.now() + 120000));
               stop('指定サイズのカートボタンを押しました。');
               add.click();
               return;
@@ -481,30 +492,40 @@
               });
               const add = rows.length === 1 && findControl(/^カートへ入れる$/, rows[0]);
               if (!add) { stop('指定サイズのカートボタンが見つかりません。'); return; }
-              clearAbcReview();
-              sessionStorage.setItem(abcReviewKey, String(Date.now() + 120000));
+              clearReview();
+              sessionStorage.setItem(reviewKey, String(Date.now() + 120000));
               stop('指定サイズのカートボタンを押しました。');
               add.click();
               return;
             }
-            const cm = String(target.cm.toFixed(1)).replace('.', '\\.');
-            const sizeControl = findControl(new RegExp(String.raw`^US [0-9.]+ \(JP ${cm}\)$`));
-            if (!sizeControl) { stop('指定サイズの選択ボタンが見つかりません。'); return; }
-            sizeControl.click();
+            const cm = String(target.cm).replace('.', '\\.');
+            const jp = Number.isInteger(target.cm) ? cm + String.raw`(?:\.0)?` : cm;
+            const sizeText = String.raw`US\s*\d+(?:\.\d+)?\s*\(\s*JP\s*${jp}\s*(?:cm)?\s*\)`;
+            const sizeLabel = new RegExp('^' + sizeText + '$', 'i');
+            const selected = new RegExp(String.raw`サイズ\s*[:：]\s*${sizeText}`, 'i');
+            let sizeClicked = false;
             const verify = () => {
-              const selected = new RegExp(String.raw`サイズ\s*[:：]\s*US [0-9.]+ \(JP ${cm}\)`);
-              if (!selected.test(document.body.innerText)) return;
-              if (!findControl(/^(?:カートに入れる|カートに追加|Add to cart)$/i)) return;
-              observer.disconnect();
-              observer = null;
-              clearTimeout(timer);
-              action.click();
+              if (selected.test(document.body.innerText.normalize('NFKC')) && findControl(vansAddLabel)) {
+                observer.disconnect();
+                observer = null;
+                clearTimeout(timer);
+                action.click();
+                return;
+              }
+              if (sizeClicked) return;
+              const sizeControl = findControl(sizeLabel);
+              if (!sizeControl) return;
+              sizeClicked = true;
+              sizeControl.click();
+              verify();
             };
             action.textContent = '停止';
-            report('指定サイズの在庫を確認しています。');
+            report('VANSの公式ページで指定サイズとカートボタンを確認しています。');
             observer = new MutationObserver(verify);
             observer.observe(document.body, {subtree: true, childList: true, attributes: true, characterData: true});
-            timer = setTimeout(() => stop('指定サイズをカートに追加できませんでした。'), 120000);
+            timer = setTimeout(() => stop(sizeClicked
+              ? 'サイズ選択後にカートボタンを確認できませんでした。'
+              : '指定サイズの選択ボタンを確認できませんでした。在庫とサイズをご確認ください。'), 15000);
             verify();
           }, 0);
         }
@@ -519,11 +540,11 @@
       launcher.setAttribute('aria-label', 'うずら BOT を開く');
       launcher.style.cssText = 'position:fixed;right:10px;bottom:calc(env(safe-area-inset-bottom) + 90px);z-index:2147483647;width:48px;height:48px;border-radius:50%;background:#0d1b32;color:white;border:2px solid white;font:bold 24px system-ui';
       launcher.onclick = () => { panel.hidden = !panel.hidden; };
-      if (abcMart && (abcCart || abcOrder)) {
-        if (Number(sessionStorage.getItem(abcReviewKey)) > Date.now()) {
-          continueAbcReview();
+      if (reviewStore && (reviewCart || reviewOrder)) {
+        if (Number(sessionStorage.getItem(reviewKey)) > Date.now()) {
+          continueReview();
         } else {
-          clearAbcReview();
+          clearReview();
           report('購入手続きは公式の確認画面まで進みます。');
         }
       }
