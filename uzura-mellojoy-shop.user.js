@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         うずら BOT — Mellojoy・Shop対応
 // @namespace    uzura.mellojoy.shop
-// @version      2.1.44.10952
+// @version      2.1.44.10954
 // @updateURL    https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.meta.js
 // @downloadURL  https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.user.js
 // @description  Mellojoy・Shopify・Supreme・HUMAN MADE・Buffer・Palace・and STの購入補助。購入成功時のDiscord通知に対応。
@@ -45,7 +45,7 @@
       observer?.disconnect();
       observer = null;
       clearTimeout(timer);
-      action.textContent = vans || abcMart || billys ? '商品ページ・カートを操作' : store + '｜すぐ実行';
+      action.textContent = abcMart && (abcCart || abcOrder) ? 'カートの確認へ進む' : vans || abcMart || billys ? '商品ページ・カートを操作' : store + '｜すぐ実行';
       report(message);
     }
 
@@ -56,8 +56,104 @@
         label.test((element.getAttribute('aria-label') || element.value || element.getAttribute('alt') || element.textContent).replace(/[\uE000-\uF8FF]/g, '').trim().replace(/\s+/g, ' ')));
     }
 
+    let stopVansHandoff;
+    function waitForVansCart() {
+      stopVansHandoff?.();
+      const host = panel.getRootNode().host;
+      const added = /カートに商品(?:が)?追加されました/;
+      let frame;
+      let addedToCart = false;
+      function cleanup() {
+        cartObserver.disconnect();
+        clearTimeout(timeout);
+        cancelAnimationFrame(frame);
+        host.style.removeProperty('display');
+        stopVansHandoff = null;
+      }
+      function check() {
+        frame = undefined;
+        if (added.test(document.body.innerText)) {
+          if (addedToCart) return;
+          addedToCart = true;
+          clearTimeout(timeout);
+          report('カート追加を確認しました。公式画面で Apple Pay を選べます。');
+          host.style.setProperty('display', 'none', 'important');
+        } else if (addedToCart) {
+          cleanup();
+        }
+      }
+      const cartObserver = new MutationObserver(() => {
+        if (frame === undefined) frame = requestAnimationFrame(check);
+      });
+      const timeout = setTimeout(() => {
+        cleanup();
+        report('カート追加の確認ができませんでした。公式画面をご確認ください。');
+      }, 15000);
+      stopVansHandoff = cleanup;
+      cartObserver.observe(document.body, {subtree: true, childList: true, attributes: true, characterData: true});
+    }
+
+    const abcReviewKey = 'uzura-abc-review-until';
+    const abcCart = location.pathname === '/shop/cart/cart.aspx';
+    const abcOrder = /^\/shop\/order\//i.test(location.pathname);
+
+    function clearAbcReview() {
+      sessionStorage.removeItem(abcReviewKey);
+      sessionStorage.removeItem(abcReviewKey + '-step');
+    }
+
+    function continueAbcReview() {
+      if (!abcMart || (!abcCart && !abcOrder)) return;
+      const reachedReview = () =>
+        Array.from(document.querySelectorAll('h1,h2,h3')).some(heading =>
+          heading.textContent.trim() === 'カートの確認') ||
+        Boolean(findControl(/^(?:ご注文を確定する|注文を確定する|d払い（ドコモ）へ|au PAYへ|PayPayへ)$/i));
+      function finish(message) {
+        clearAbcReview();
+        stop(message);
+      }
+      function check() {
+        if (reachedReview()) {
+          finish('Step3「カートの確認」に到着しました。内容を確認してご自身で確定してください。');
+          return;
+        }
+        if (findControl(/^ログイン$/) || document.querySelector('input[type=password]:not([disabled])')) {
+          finish('公式サイトにログインしてから購入手続きを続けてください。');
+          return;
+        }
+        const next = abcCart
+          ? findControl(/^(?:ご購入手続きへ(?:進む)?|レジに進む|購入手続きへ(?:進む)?|ご注文手続きへ(?:進む)?)$/)
+          : findControl(/^(?:ご?注文内容を確認する|ご?注文内容の確認へ進む|カートの確認へ進む|確認画面へ進む)$/);
+        if (!next) return;
+        if (next.form && !next.form.checkValidity()) {
+          finish('公式画面の必須項目を入力してから続けてください。');
+          return;
+        }
+        const step = abcCart ? 'cart' : 'order';
+        if (sessionStorage.getItem(abcReviewKey + '-step') === step) {
+          finish('公式画面で入力内容を確認し、手続きを続けてください。');
+          return;
+        }
+        sessionStorage.setItem(abcReviewKey + '-step', step);
+        stop(abcCart ? '公式の購入手続きへ進みます。' : '公式の確認画面へ進みます。');
+        next.click();
+      }
+      action.textContent = '停止';
+      report('公式の購入手続きを確認しています。');
+      observer = new MutationObserver(check);
+      observer.observe(document.body, {subtree: true, childList: true, attributes: true, characterData: true});
+      timer = setTimeout(() => finish('公式画面で配送先・支払い方法を確認し、手続きを続けてください。'), 8000);
+      check();
+    }
+
     action.addEventListener('click', () => {
-      if (observer) { stop('停止しました'); return; }
+      if (observer) { if (abcMart) clearAbcReview(); stop('停止しました'); return; }
+      if (abcMart && (abcCart || abcOrder)) {
+        clearAbcReview();
+        sessionStorage.setItem(abcReviewKey, String(Date.now() + 120000));
+        continueAbcReview();
+        return;
+      }
       path = location.pathname;
       const cart = /^\/(?:checkout\/)?cart\/?$/.test(path) || ((abcMart || billys) && path === '/shop/cart/cart.aspx');
       if ((abcMart || billys) && !cart) { stop('商品URLとサイズを入力して「すぐ実行」を押してください。'); return; }
@@ -73,6 +169,7 @@
         const control = findControl(label);
         if (!control) return;
         stop(cart ? '公式の購入手続きボタンを押しました' : '公式のカート追加ボタンを押しました');
+        if (vans && !cart) waitForVansCart();
         control.click();
       }
       action.textContent = '停止';
@@ -265,6 +362,9 @@
       panel.append(search, output, action);
       action.removeAttribute('style');
       action.hidden = !/^(?:\/(?:checkout\/)?cart\/?|\/shop\/cart\/cart\.aspx)$/.test(location.pathname);
+      if (abcMart && (abcCart || abcOrder)) {
+        action.hidden = false;
+      }
       if (productPath.test(location.pathname)) keyword.value = location.href;
       const key = 'uzura-vans-search';
       const sizeKey = 'uzura-storefront-cart-size';
@@ -333,6 +433,8 @@
       });
       runNow.onclick = () => start(false);
       cancel.onclick = () => {
+        if (abcMart) clearAbcReview();
+        stopVansHandoff?.();
         clearTimeout(reservation);
         stop('停止しました');
       };
@@ -381,16 +483,18 @@
               });
               const add = rows.length === 1 && findControl(/^カートへ入れる$/, rows[0]);
               if (!add) { stop('指定サイズのカートボタンが見つかりません。'); return; }
+              clearAbcReview();
+              sessionStorage.setItem(abcReviewKey, String(Date.now() + 120000));
               stop('指定サイズのカートボタンを押しました。');
               add.click();
               return;
             }
             const cm = String(target.cm.toFixed(1)).replace('.', '\\.');
-            const sizeControl = findControl(new RegExp('^US [0-9.]+ \\(JP ' + cm + '\\)$'));
+            const sizeControl = findControl(new RegExp(String.raw`^US [0-9.]+ \(JP ${cm}\)$`));
             if (!sizeControl) { stop('指定サイズの選択ボタンが見つかりません。'); return; }
             sizeControl.click();
             const verify = () => {
-              const selected = new RegExp('サイズ\\s*[:：]\\s*US [0-9.]+ \\(JP ' + cm + '\\)');
+              const selected = new RegExp(String.raw`サイズ\s*[:：]\s*US [0-9.]+ \(JP ${cm}\)`);
               if (!selected.test(document.body.innerText)) return;
               if (!findControl(/^(?:カートに入れる|カートに追加|Add to cart)$/i)) return;
               observer.disconnect();
@@ -417,6 +521,14 @@
       launcher.setAttribute('aria-label', 'うずら BOT を開く');
       launcher.style.cssText = 'position:fixed;right:10px;bottom:calc(env(safe-area-inset-bottom) + 90px);z-index:2147483647;width:48px;height:48px;border-radius:50%;background:#0d1b32;color:white;border:2px solid white;font:bold 24px system-ui';
       launcher.onclick = () => { panel.hidden = !panel.hidden; };
+      if (abcMart && (abcCart || abcOrder)) {
+        if (Number(sessionStorage.getItem(abcReviewKey)) > Date.now()) {
+          continueAbcReview();
+        } else {
+          clearAbcReview();
+          report('購入手続きは公式の確認画面まで進みます。');
+        }
+      }
       root.append(launcher);
     } else {
       document.body.append(panel);
