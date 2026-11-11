@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         うずら BOT — Mellojoy・Shop対応
 // @namespace    uzura.mellojoy.shop
-// @version      2.1.44.10944
+// @version      2.1.44.10945
 // @updateURL    https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.meta.js
 // @downloadURL  https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.user.js
 // @description  Mellojoy・Shopify・Supreme・HUMAN MADE・Buffer・Palace・and STの購入補助。購入成功時のDiscord通知に対応。
@@ -16,8 +16,11 @@
 // Storefronts with their own cart controls.
 (function uzuraStorefrontCart() {
   const vans = /^(?:www\.)?vans\.co\.jp$/.test(location.hostname);
-  if (window.top !== window || (!vans && location.hostname !== 'jp.topps.com')) return;
-  const store = vans ? 'VANS JP' : 'Topps JP';
+  const abcMart = /^(?:www\.)?abc-mart\.net$/.test(location.hostname);
+  if (window.top !== window || (!vans && !abcMart && location.hostname !== 'jp.topps.com')) return;
+  const store = vans ? 'VANS JP' : abcMart ? 'ABC-MART' : 'Topps JP';
+  const productPath = abcMart ? /^\/shop\/g\/g[^/]+\/?$/i : /^\/p\//;
+
   function mount() {
     const panel = document.createElement('aside');
     panel.style.cssText = 'position:fixed;right:12px;bottom:24px;z-index:2147483647;background:#142139;color:white;padding:12px;border-radius:10px;font:15px system-ui;max-width:85vw';
@@ -40,17 +43,17 @@
     }
 
     function findControl(label) {
-      return Array.from(document.querySelectorAll('button, a, input[type=submit], input[type=button]')).find(element =>
+      return Array.from(document.querySelectorAll('button, a, input[type=submit], input[type=button], input[type=image]')).find(element =>
         !panel.contains(element) && !element.matches(':disabled,[aria-disabled="true"]') &&
         element.getClientRects().length && getComputedStyle(element).visibility === 'visible' &&
-        label.test((element.getAttribute('aria-label') || element.value || element.textContent).replace(/[\uE000-\uF8FF]/g, '').trim().replace(/\s+/g, ' ')));
+        label.test((element.getAttribute('aria-label') || element.value || element.getAttribute('alt') || element.textContent).replace(/[\uE000-\uF8FF]/g, '').trim().replace(/\s+/g, ' ')));
     }
 
     action.addEventListener('click', () => {
       if (observer) { stop('停止しました'); return; }
       path = location.pathname;
-      const cart = /^\/(?:checkout\/)?cart\/?$/.test(path);
-      if (vans && !cart && !path.startsWith('/p/')) {
+      const cart = /^\/(?:checkout\/)?cart\/?$/.test(path) || (abcMart && path === '/shop/cart/cart.aspx');
+      if ((vans || abcMart) && !cart && !productPath.test(path)) {
         stop('公式の商品ページを開き、サイズを選択してください');
         return;
       }
@@ -71,22 +74,33 @@
       timer = setTimeout(() => stop('操作できるボタンが見つかりませんでした'), 120000);
       check();
     });
-    if (vans) {
+    if (vans || abcMart) {
       const search = document.createElement('form');
       const keyword = document.createElement('input');
-      keyword.placeholder = '商品名または品番';
+      keyword.placeholder = abcMart ? '公式の商品URL' : '商品名・品番・商品URL';
       keyword.required = true;
-      keyword.setAttribute('aria-label', '商品名または品番');
+      keyword.setAttribute('aria-label', keyword.placeholder);
       const time = document.createElement('input');
       time.type = 'time';
       time.setAttribute('aria-label', '発売時刻（日本時間、空欄ですぐ検索）');
       const submit = document.createElement('button');
-      submit.textContent = '新着検索・予約';
+      submit.textContent = '商品を開く・予約';
       search.append(keyword, time, submit);
       panel.prepend(search);
       const key = 'uzura-vans-search';
       let reservation;
       function lookup(query) {
+        if (/^https?:/i.test(query) || abcMart) {
+          let url;
+          try { url = new URL(query); } catch {}
+          if (url?.origin === location.origin && productPath.test(url.pathname)) {
+            if (url.href === location.href) location.reload();
+            else location.assign(url.href);
+          } else {
+            status.textContent = 'このストアの公式商品URLを入力してください。';
+          }
+          return;
+        }
         if (location.pathname !== '/new_arrival/') {
           sessionStorage.setItem(key, query);
           location.assign('/new_arrival/');
@@ -114,11 +128,12 @@
         let at = Date.parse(jstDay + 'T' + time.value + ':00+09:00');
         if (at < now) at += 86400000;
         reservation = setTimeout(() => {
+          if (abcMart || /^https?:/i.test(query)) { lookup(query); return; }
           sessionStorage.setItem(key, query);
           if (location.pathname === '/new_arrival/') location.reload();
           else location.assign('/new_arrival/');
         }, at - now);
-        status.textContent = '日本時間 ' + time.value + ' に新着一覧を確認します。';
+        status.textContent = '日本時間 ' + time.value + ' に商品を確認します。';
       });
       const pending = sessionStorage.getItem(key);
       if (pending && location.pathname === '/new_arrival/') {
@@ -130,8 +145,8 @@
     }
     stop('商品ページまたはカートで使えます');
     document.body.append(panel);
-    if (vans) {
-      const bubble = synovaBubble('uzura-vans-launcher', () => {
+    if (vans || abcMart) {
+      const bubble = synovaBubble(abcMart ? 'uzura-abcmart-launcher' : 'uzura-vans-launcher', () => {
         panel.hidden = !panel.hidden;
       });
       panel.hidden = true;
