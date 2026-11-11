@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          うずら BOT Android — ショップ・購入通知
 // @namespace     uzura.bot.android.shops
-// @version       2.1.44.10948
+// @version       2.1.44.10949
 // @description   Android版。Shopify、Supreme、HUMAN MADE、Buffer、Palace、and STなどの購入補助とDiscord購入通知。
 // @match         https://*/*
 // @run-at        document-start
@@ -318,7 +318,7 @@
       const bubble = synovaBubble(abcMart ? 'uzura-abcmart-launcher' : billys ? 'uzura-billys-launcher' : 'uzura-vans-launcher', () => {
         panel.hidden = !panel.hidden;
       });
-      panel.hidden = true;
+      panel.hidden = false;
       bubble.show(false, false);
       panel.style.top = 'calc(env(safe-area-inset-top) + 10px)';
       panel.style.bottom = 'auto';

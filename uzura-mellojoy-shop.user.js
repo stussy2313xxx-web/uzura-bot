@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         うずら BOT — Mellojoy・Shop対応
 // @namespace    uzura.mellojoy.shop
-// @version      2.1.44.10948
+// @version      2.1.44.10949
 // @updateURL    https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.meta.js
 // @downloadURL  https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.user.js
 // @description  Mellojoy・Shopify・Supreme・HUMAN MADE・Buffer・Palace・and STの購入補助。購入成功時のDiscord通知に対応。
@@ -320,7 +320,7 @@
       const bubble = synovaBubble(abcMart ? 'uzura-abcmart-launcher' : billys ? 'uzura-billys-launcher' : 'uzura-vans-launcher', () => {
         panel.hidden = !panel.hidden;
       });
-      panel.hidden = true;
+      panel.hidden = false;
       bubble.show(false, false);
       panel.style.top = 'calc(env(safe-area-inset-top) + 10px)';
       panel.style.bottom = 'auto';
