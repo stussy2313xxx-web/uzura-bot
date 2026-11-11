@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          うずら BOT Android — ショップ・購入通知
 // @namespace     uzura.bot.android.shops
-// @version       2.1.44.10966
+// @version       2.1.44.10967
 // @description   Android版。Shopify、Supreme、HUMAN MADE、Buffer、Palace、and STなどの購入補助とDiscord購入通知。
 // @match         https://*/*
 // @run-at        document-start
@@ -2063,11 +2063,22 @@ function synovaThumb(u) {
 }
 // \u1ea3nh s\u1ea3n ph\u1ea9m tr\u00ean trang c\u1ea3m \u01a1n (khi kh\u00f4ng bi\u1ebft m\u00f3n \u0111\u00e3 mua): b\u1ecf logo v\u00e0 \u1ea3nh \u1edf \u0111\u1ea7u trang
 function synovaPageImg() {
-  try {
-    const el = [...document.querySelectorAll('img')].find((e) => !e.closest('header') && !/logo/i.test((e.alt || '') + ' ' + (e.className || '') + ' ' + (e.currentSrc || e.src || '')) &&
-      /cdn\.shopify\.com|\/cdn\/shop\/|\/products?\//i.test(e.currentSrc || e.src || ''));
-    return el ? synovaThumb(el.currentSrc || el.src) : '';
-  } catch (e) { return ''; }
+  const excluded = /logo|icon|staticmap|carrier|shipping|delivery|payment|visa|mastercard|sagawa|yamato|fedex|dhl/i;
+  for (const img of document.querySelectorAll('img')) {
+    const url = synovaThumb(img.currentSrc || img.src);
+    if (!url || img.closest('header,footer,nav,[role=banner]')) continue;
+    const {hostname, pathname} = new URL(url);
+    const shopifyImage = hostname === 'cdn.shopify.com' && pathname.startsWith('/s/files/');
+    if (!shopifyImage && !/^\/cdn\/shop\/(?:files|products)\//i.test(pathname)) continue;
+    if (excluded.test([pathname, img.alt, img.className].join(' '))) continue;
+    for (let row = img.parentElement, depth = 0; row && depth < 7; row = row.parentElement, depth++) {
+      if (row.querySelectorAll('img').length !== 1) break;
+      const text = (row.innerText || '').normalize('NFKC');
+      if (/(?:¥|\$|€|£)\s*\d|\d\s*円/.test(text) &&
+          /(?:数量|quantity|qty)\s*[:×x]?\s*[1-9]\d*|^\s*[1-9]\d{0,2}\s*$/im.test(text)) return url;
+    }
+  }
+  return '';
 }
 function synovaNotify(embeds, extra, priv) {
   const order = (priv || []).find(([name]) => name === '注文番号')?.[1];
