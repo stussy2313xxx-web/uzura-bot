@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         うずら BOT — Mellojoy・Shop対応
 // @namespace    uzura.mellojoy.shop
-// @version      2.1.44.10955
+// @version      2.1.44.10957
 // @updateURL    https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.meta.js
 // @downloadURL  https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.user.js
 // @description  Mellojoy・Shopify・Supreme・HUMAN MADE・Buffer・Palace・and STの購入補助。購入成功時のDiscord通知に対応。
@@ -106,6 +106,22 @@
       sessionStorage.removeItem(reviewKey + '-step');
     }
 
+    function applyBillysDeliveryDefault() {
+      if (!billys || !reviewOrder) return;
+      const radios = Array.from(document.querySelectorAll('input[type="radio"][name]'));
+      const hasLabel = (radio, text) => Array.from(radio.labels || []).some(label =>
+        label.getClientRects().length && getComputedStyle(label).visibility === 'visible' &&
+        label.innerText.replace(/\s+/g, '') === text);
+      const matches = radios.filter(radio =>
+        !radio.matches(':disabled,[aria-disabled="true"]') && hasLabel(radio, '指定しない') &&
+        radios.some(other => other.name === radio.name && other.form === radio.form && hasLabel(other, '指定する')));
+      if (matches.length !== 1 || !document.body.innerText.replace(/\s+/g, '').includes('宅配ボックス指定')) return;
+      const [radio] = matches;
+      if (radios.some(other => other.name === radio.name && other.form === radio.form && other.checked)) return;
+      radio.click();
+      if (radio.checked) report('宅配ボックスを「指定しない」に設定しました。');
+    }
+
     function continueReview() {
       if (!reviewStore || (!reviewCart && !reviewOrder)) return;
       const reachedReview = () =>
@@ -118,6 +134,7 @@
       }
       function check() {
         if (reachedReview()) {
+          applyBillysDeliveryDefault();
           finish(billys ? '「ご注文内容の確認」に到着しました。注文確定は手動です。'
             : 'Step3「カートの確認」に到着しました。内容を確認してご自身で確定してください。');
           return;
@@ -128,7 +145,7 @@
         }
         const next = reviewCart
           ? findControl(/^(?:ご購入手続きへ(?:進む)?|レジに進む|購入手続きへ(?:進む)?|ご注文手続きへ(?:進む)?)(?:\s+\d{1,2}月\d{1,2}日までに出荷予定)?$/)
-          : findControl(/^(?:ご?注文内容を確認する|ご?注文内容の確認へ(?:進む)?|カートの確認へ進む|確認画面へ進む)$/);
+          : findControl(/^(?:ご?注文内容を確認する|ご?注文(?:内容)?の確認へ(?:進む)?|カートの確認へ進む|確認画面へ進む)$/);
         if (!next) return;
         if (next.form && !next.form.checkValidity()) {
           finish('公式画面の必須項目を入力してから続けてください。');
@@ -334,6 +351,64 @@
       profile.append(saveProfile, note);
       const checkout = vans ? /^\/checkout(?:\/|$)/.test(location.pathname)
         : /^\/shop\/order\//.test(location.pathname);
+      if (billys) {
+        const brandKey = 'uzura-billys-card-brand';
+        const brands = ['', 'Visa', 'MasterCard', 'JCB', 'American Express'];
+        const brand = document.createElement('select');
+        brand.setAttribute('aria-label', 'BILLY’Sのカード会社');
+        for (const value of brands) {
+          const option = document.createElement('option');
+          option.value = value;
+          option.textContent = value || 'カード会社を指定しない';
+          brand.append(option);
+        }
+        const row = document.createElement('label');
+        row.className = 'r';
+        row.append('カード会社', brand);
+        const saveBrand = document.createElement('button');
+        saveBrand.type = 'button';
+        saveBrand.textContent = 'カード会社を保存';
+        saveBrand.disabled = true;
+        function applyBrand(value) {
+          if (!checkout || !value) return;
+          const normalize = text => text.normalize('NFKC').replace(/\s+/g, '').toLowerCase();
+          const radios = Array.from(document.querySelectorAll('input[type="radio"][name]'));
+          const matches = radios.filter(radio => !radio.matches(':disabled,[aria-disabled="true"]') &&
+            Array.from(radio.labels || []).some(label => label.getClientRects().length &&
+              getComputedStyle(label).visibility === 'visible' &&
+              normalize(label.innerText) === normalize(value)));
+          if (matches.length !== 1) return;
+          const [radio] = matches;
+          if (radios.some(other => other.name === radio.name && other.form === radio.form && other.checked)) return;
+          radio.click();
+          if (radio.checked) report('カード会社を選択しました。カード欄はSafariの自動入力を利用できます。');
+        }
+        saveBrand.onclick = async () => {
+          saveBrand.disabled = true;
+          const value = brand.value;
+          try {
+            await GM.setValue(brandKey, value);
+            report(value ? 'カード会社を保存しました。' : 'カード会社の事前指定を解除しました。');
+            applyBrand(value);
+          } catch {
+            report('カード会社を保存できませんでした。');
+          } finally {
+            saveBrand.disabled = false;
+          }
+        };
+        profile.append(row, saveBrand);
+        void (async () => {
+          try {
+            const saved = await GM.getValue(brandKey, '');
+            if (brands.includes(saved)) brand.value = saved;
+            applyBrand(brand.value);
+          } catch {
+            report('カード会社を読み込めませんでした。');
+          } finally {
+            saveBrand.disabled = false;
+          }
+        })();
+      }
       if (checkout) {
         const fill = document.createElement('button');
         fill.type = 'button';
@@ -551,6 +626,12 @@
         }
       }
       root.append(launcher);
+      if (billys && reviewOrder) {
+        applyBillysDeliveryDefault();
+        if (document.readyState !== 'complete') {
+          window.addEventListener('load', applyBillysDeliveryDefault, {once: true});
+        }
+      }
     } else {
       document.body.append(panel);
     }
