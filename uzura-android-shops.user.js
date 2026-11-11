@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          うずら BOT Android — ショップ・購入通知
 // @namespace     uzura.bot.android.shops
-// @version       2.1.44.10950
+// @version       2.1.44.10951
 // @description   Android版。Shopify、Supreme、HUMAN MADE、Buffer、Palace、and STなどの購入補助とDiscord購入通知。
 // @match         https://*/*
 // @run-at        document-start
@@ -95,15 +95,15 @@
       heading.textContent = 'うずら BOT';
       heading.style.cssText = 'display:block;font-size:23px;font-weight:800;line-height:1.1';
       const header = document.createElement('header');
-      header.style.cssText = 'display:flex;align-items:center;gap:9px';
+      header.className = 'hd';
       const icon = document.createElement('span');
       icon.textContent = 'U';
       icon.setAttribute('aria-hidden', 'true');
       icon.style.cssText = 'display:grid;place-items:center;width:40px;height:40px;border-radius:50%;background:white;color:#0e1b2d;font-weight:800';
       const title = document.createElement('div');
-      title.style.cssText = 'flex:1;min-width:0';
+      title.className = 'ttl';
       const subtitle = document.createElement('small');
-      subtitle.style.cssText = 'color:#b9cbe4;font-weight:700';
+      subtitle.className = 'ver';
       subtitle.textContent = store;
       title.append(heading, subtitle);
       const position = document.createElement('button');
@@ -114,9 +114,7 @@
       hide.textContent = '隠す';
       header.append(icon, title, position, hide);
       position.onclick = () => {
-        const moveDown = Boolean(panel.style.top);
-        panel.style.top = moveDown ? '' : 'calc(env(safe-area-inset-top) + 10px)';
-        panel.style.bottom = moveDown ? 'calc(env(safe-area-inset-bottom) + 152px)' : 'auto';
+        panel.className = panel.classList.contains('top') ? 'bot' : 'top';
       };
       hide.onclick = () => { panel.hidden = true; };
       const runNow = document.createElement('button');
@@ -135,41 +133,54 @@
         output.textContent = log.join('\n');
         output.hidden = !output.hidden;
       };
-      panel.style.cssText += ';box-sizing:border-box;width:min(460px,calc(100vw - 24px));max-height:65vh;overflow:auto;border:1px solid #526b8d;border-radius:16px;box-shadow:0 6px 24px #0008';
-      panel.style.background = '#0e1b2d';
-      status.style.cssText = 'margin-top:8px;font-size:14px;font-weight:700';
-      search.style.cssText = 'display:grid;gap:8px;margin:10px 0';
-      for (const field of [keyword, time]) {
-        field.style.cssText = 'box-sizing:border-box;width:100%;padding:9px;border:1px solid #526b8d;border-radius:8px;background:#192b45;color:white;font-size:16px';
-      }
-      for (const button of [submit, runNow, cancel, showLog, position, hide]) {
-        button.style.cssText = 'padding:8px;border:1px solid #526b8d;border-radius:8px;background:#223b5e;color:white;font-weight:bold';
-      }
+      panel.id = 'sxbbox';
+      panel.className = 'top';
+      panel.removeAttribute('style');
+      status.className = 'st';
+      search.className = 'body';
       const size = document.createElement('input');
       size.placeholder = 'サイズ（cm、例 27.5）';
       size.inputMode = 'decimal';
       size.setAttribute('aria-label', 'サイズ（cm）');
-      size.style.cssText = keyword.style.cssText;
+
       const timeRow = document.createElement('label');
-      timeRow.style.cssText = 'display:grid;grid-template-columns:120px 1fr;align-items:center;gap:8px';
-      timeRow.append(time, '販売開始（日本時間）');
+      timeRow.className = 'r';
+      const clock = document.createElement('span');
+      clock.className = 'lb';
+      clock.textContent = '⏰';
+      const timeLabel = document.createElement('span');
+      timeLabel.className = 'desc';
+      timeLabel.textContent = '販売開始（日本時間）';
+      timeRow.append(clock, time, timeLabel);
       const productRow = document.createElement('label');
-      productRow.style.cssText = 'display:grid;grid-template-columns:36px 1fr;align-items:center;gap:8px;font-weight:700';
-      productRow.append('KW1', keyword);
-      const sizeRow = document.createElement('div');
-      sizeRow.style.cssText = 'padding-left:44px';
-      sizeRow.append(size);
+      productRow.className = 'r';
+      const kwLabel = document.createElement('span');
+      kwLabel.className = 'lb';
+      kwLabel.textContent = 'KW1';
+      productRow.append(kwLabel, keyword);
+      const sizeRow = document.createElement('label');
+      sizeRow.className = 'r';
+      const sizeLabel = document.createElement('span');
+      sizeLabel.className = 'lb';
+      sizeLabel.textContent = 'サイズ';
+      sizeRow.append(sizeLabel, size);
+      const product = document.createElement('div');
+      product.className = 'kw';
+      product.append(productRow, sizeRow);
       const toolbar = document.createElement('div');
-      toolbar.style.cssText = 'display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px';
-      toolbar.append(runNow, cancel, showLog);
-      submit.style.cssText += ';background:#f1f5ff;color:#142139;min-height:40px';
+      toolbar.className = 'r btns';
+      submit.className = 'main';
+      toolbar.append(submit, runNow, cancel, showLog);
       const syncScheduleLabel = () => {
         submit.textContent = time.value ? time.value + ' に予約・自動スタート' : '予約・自動スタート';
       };
       time.addEventListener('input', syncScheduleLabel);
-      search.append(timeRow, productRow, sizeRow, submit, toolbar);
+      search.append(timeRow, product, toolbar);
       panel.prepend(header);
       panel.append(search, output, action);
+      action.removeAttribute('style');
+      action.hidden = !/^(?:\/(?:checkout\/)?cart\/?|\/shop\/cart\/cart\.aspx)$/.test(location.pathname);
+      if (productPath.test(location.pathname)) keyword.value = location.href;
       const key = 'uzura-vans-search';
       const sizeKey = 'uzura-storefront-cart-size';
       let reservation;
@@ -313,17 +324,17 @@
       }
     }
     stop('商品ページまたはカートで使えます');
-    document.body.append(panel);
     if (vans || abcMart || billys) {
+      const root = uzuraMountShopPanel(panel, 'uzura-storefront-panel');
       const launcher = document.createElement('button');
       launcher.type = 'button';
       launcher.textContent = 'U';
       launcher.setAttribute('aria-label', 'うずら BOT を開く');
       launcher.style.cssText = 'position:fixed;right:10px;bottom:calc(env(safe-area-inset-bottom) + 90px);z-index:2147483647;width:48px;height:48px;border-radius:50%;background:#0d1b32;color:white;border:2px solid white;font:bold 24px system-ui';
       launcher.onclick = () => { panel.hidden = !panel.hidden; };
-      document.body.append(launcher);
-      panel.style.top = 'calc(env(safe-area-inset-top) + 10px)';
-      panel.style.bottom = 'auto';
+      root.append(launcher);
+    } else {
+      document.body.append(panel);
     }
   }
   if (document.readyState !== 'loading') queueMicrotask(mount);
@@ -1156,6 +1167,18 @@ const UZURA_SHOP_PANEL_CSS = `#sxbbox,#sxbbox *{box-sizing:border-box;line-heigh
 #sxbbox button,#sxbbox input,#sxbbox select{font-family:-apple-system,"Hiragino Sans",sans-serif}
 #sxblog{display:block;max-height:220px;overflow:auto;white-space:pre-wrap;font:11px ui-monospace,monospace;background:#10213b;color:#cfdeef;border:1px solid #385573;border-radius:8px;padding:6px;margin-top:6px}
 `;
+
+function uzuraMountShopPanel(box, id) {
+  const host = document.createElement('div');
+  host.id = id;
+  host.style.cssText = 'all:initial;position:fixed;z-index:2147483647;top:0;left:0;width:0;height:0';
+  const root = host.attachShadow({mode: 'open'});
+  const style = document.createElement('style');
+  style.textContent = UZURA_SHOP_PANEL_CSS + '#sxbbox [hidden]{display:none!important}';
+  root.append(style, box);
+  document.body.append(host);
+  return root;
+}
 
 // and ST uses the official product picker and its existing cart handler.
 (function uzuraAndSt() {
@@ -2593,8 +2616,6 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
     if (IS_SHOPIFY) gmSet('sxb_komoju_info', komojuInfo(buyCfg));
   }
   box.innerHTML = `
-<style>
-${UZURA_SHOP_PANEL_CSS}</style>
 <div class="hd">${ICON_TAG}<b class="ttl">${TITLE_TAG}<span class="ver">${SHOP} \u00b7 v${IS_GEN ? UZURA_RELEASE : SYNOVA_VERSION}</span></b><button id="sxbpos">${L('\u4e0a\u4e0b', 'L\u00ean/Xu\u1ed1ng')}</button><button id="sxbhide">${L('\u96a0\u3059', '\u1ea8n')}</button></div>
 <div class="st" id="sxbst">${st.active ? L('\u5f85\u6a5f\u4e2d', '\u0110ang ch\u1edd') : L('\u505c\u6b62\u4e2d', '\u0110ang t\u1eaft')}</div>
 <div class="body">
@@ -2612,13 +2633,7 @@ ${UZURA_SHOP_PANEL_CSS}</style>
   <div class="r btns"><button class="main" id="sxbgo">${goLabel(cfg.open)}</button><button id="sxbnow">${L('\u3059\u3050\u5b9f\u884c', 'Ch\u1ea1y Ngay')}</button><button id="sxbstop">${L('\u505c\u6b62', 'D\u1eebng')}</button><button id="sxblogb">${L('\u30ed\u30b0\u3092\u898b\u308b', 'Xem Log')}</button></div>
   <div id="sxblogw" style="display:none"><div class="r"><button id="sxbclr">${L('\u30ed\u30b0\u6d88\u53bb', 'X\u00f3a log')}</button><button id="sxbcopy">${L('\u30ed\u30b0\u3092\u30b3\u30d4\u30fc', 'Sao ch\u00e9p log')}</button><span class="desc" id="sxblogn" style="margin:0"></span></div><div id="sxblog"></div></div>
 </div>`;
-  const sxHost = document.createElement('div');
-  sxHost.id = 'sxbhost';
-  // all:initial: ch\u1eb7n c\u1ea3 thu\u1ed9c t\u00ednh k\u1ebf th\u1eeba (font, letter-spacing, text-transform\u2026) c\u1ee7a trang l\u1ecdt v\u00e0o khung
-  sxHost.style.cssText = 'all:initial;position:fixed;z-index:2147483647;top:0;left:0;width:0;height:0';
-  sxRoot = sxHost.attachShadow({ mode: 'open' });
-  sxRoot.appendChild(box);
-  document.body.appendChild(sxHost);
+  sxRoot = uzuraMountShopPanel(box, 'sxbhost');
   const bub = synovaBubble('sxbbub', () => { ui.hide = false; apply(); });
   const apply = () => {
     box.className = ui.top ? 'top' : 'bot';
