@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         うずら BOT — Mellojoy・Shop対応
 // @namespace    uzura.mellojoy.shop
-// @version      2.1.44.10946
+// @version      2.1.44.10947
 // @updateURL    https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.meta.js
 // @downloadURL  https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.user.js
 // @description  Mellojoy・Shopify・Supreme・HUMAN MADE・Buffer・Palace・and STの購入補助。購入成功時のDiscord通知に対応。
@@ -17,9 +17,10 @@
 (function uzuraStorefrontCart() {
   const vans = /^(?:www\.)?vans\.co\.jp$/.test(location.hostname);
   const abcMart = /^(?:www\.)?abc-mart\.net$/.test(location.hostname);
-  if (window.top !== window || (!vans && !abcMart && location.hostname !== 'jp.topps.com')) return;
-  const store = vans ? 'VANS JP' : abcMart ? 'ABC-MART' : 'Topps JP';
-  const productPath = abcMart ? /^\/shop\/g\/g[^/]+\/?$/i : /^\/p\//;
+  const billys = /^(?:www\.)?billys-tokyo\.net$/.test(location.hostname);
+  if (window.top !== window || (!vans && !abcMart && !billys && location.hostname !== 'jp.topps.com')) return;
+  const store = vans ? 'VANS JP' : abcMart ? 'ABC-MART' : billys ? 'BILLY’S' : 'Topps JP';
+  const productPath = abcMart || billys ? /^\/shop\/g\/g[^/]+\/?$/i : /^\/p\//;
 
   function mount() {
     const panel = document.createElement('aside');
@@ -44,7 +45,7 @@
       observer?.disconnect();
       observer = null;
       clearTimeout(timer);
-      action.textContent = vans || abcMart ? '商品ページ・カートを操作' : store + '｜すぐ実行';
+      action.textContent = vans || abcMart || billys ? '商品ページ・カートを操作' : store + '｜すぐ実行';
       report(message);
     }
 
@@ -58,14 +59,14 @@
     action.addEventListener('click', () => {
       if (observer) { stop('停止しました'); return; }
       path = location.pathname;
-      const cart = /^\/(?:checkout\/)?cart\/?$/.test(path) || (abcMart && path === '/shop/cart/cart.aspx');
-      if (abcMart && !cart) { stop('商品URLとサイズを入力して「すぐ実行」を押してください。'); return; }
+      const cart = /^\/(?:checkout\/)?cart\/?$/.test(path) || ((abcMart || billys) && path === '/shop/cart/cart.aspx');
+      if ((abcMart || billys) && !cart) { stop('商品URLとサイズを入力して「すぐ実行」を押してください。'); return; }
       if (vans && !cart && !productPath.test(path)) {
         stop('公式の商品ページを開き、サイズを選択してください');
         return;
       }
       const label = cart
-        ? /^(?:チェックアウトに進む|チェックアウト|ご購入手続きへ|レジに進む|購入手続きへ|ご注文手続きへ|Checkout)$/i
+        ? /^(?:チェックアウトに進む|チェックアウト|ご購入手続きへ|レジに進む|購入手続きへ|ご注文手続きへ|購入手続きへ進む(?: .*)?|Checkout)$/i
         : /^(?:カートに入れる|カートに追加|Add to cart)$/i;
       function check() {
         if (location.pathname !== path) { stop('ページが変わったため停止しました'); return; }
@@ -81,10 +82,10 @@
       timer = setTimeout(() => stop('操作できるボタンが見つかりませんでした'), 120000);
       check();
     });
-    if (vans || abcMart) {
+    if (vans || abcMart || billys) {
       const search = document.createElement('form');
       const keyword = document.createElement('input');
-      keyword.placeholder = abcMart ? '公式の商品URL' : '商品名・品番・商品URL';
+      keyword.placeholder = abcMart || billys ? '公式の商品URL' : '商品名・品番・商品URL';
       keyword.required = true;
       keyword.setAttribute('aria-label', keyword.placeholder);
       const time = document.createElement('input');
@@ -139,7 +140,7 @@
         else location.assign(url.href);
       }
       function lookup(query) {
-        if (/^https?:/i.test(query) || abcMart) {
+        if (/^https?:/i.test(query) || abcMart || billys) {
           let url;
           try { url = new URL(query); } catch {}
           if (url?.origin === location.origin && productPath.test(url.pathname)) {
@@ -180,7 +181,7 @@
         let at = Date.parse(jstDay + 'T' + time.value + ':00+09:00');
         if (at < now) at += 86400000;
         reservation = setTimeout(() => {
-          if (abcMart || /^https?:/i.test(query)) { lookup(query); return; }
+          if (abcMart || billys || /^https?:/i.test(query)) { lookup(query); return; }
           sessionStorage.setItem(key, JSON.stringify({query, size: size.value}));
           if (location.pathname === '/new_arrival/') location.reload();
           else location.assign('/new_arrival/');
@@ -209,7 +210,7 @@
         else window.addEventListener('load', run, {once: true});
       }
     }
-    if ((vans || abcMart) && productPath.test(location.pathname)) {
+    if ((vans || abcMart || billys) && productPath.test(location.pathname)) {
       const key = 'uzura-storefront-cart-size';
       const saved = sessionStorage.getItem(key);
       if (saved) {
@@ -218,6 +219,22 @@
         if (target.pathname === location.pathname && target.expires > Date.now()) {
           setTimeout(() => {
             panel.hidden = false;
+            if (billys) {
+              const form = document.querySelector('#cartin_form');
+              const sizes = Array.from(form?.querySelectorAll('input[type="radio"]') || []).filter(input =>
+                !input.matches(':disabled,[aria-disabled="true"]') &&
+                Array.from(input.labels || []).some(label => {
+                  const match = label.textContent.normalize('NFKC').match(/\(\s*(\d+(?:\.\d+)?)\s*cm\s*\)/i);
+                  return match && Number(match[1]) === target.cm && label.getClientRects().length;
+                }));
+              if (sizes.length !== 1) { stop('指定サイズを選べません。'); return; }
+              sizes[0].click();
+              const add = sizes[0].checked && findControl(/^カートに入れる$/, form);
+              if (!add) { stop('指定サイズをカートに追加できません。'); return; }
+              stop('指定サイズのカートボタンを押しました。');
+              add.click();
+              return;
+            }
             if (abcMart) {
               const rows = Array.from(document.querySelectorAll('#cartin_form dl')).filter(row => {
                 const match = row.querySelector('dt')?.textContent.normalize('NFKC').match(/\(\s*(\d+(?:\.\d+)?)\s*cm\s*\)/i);
@@ -254,8 +271,8 @@
     }
     stop('商品ページまたはカートで使えます');
     document.body.append(panel);
-    if (vans || abcMart) {
-      const bubble = synovaBubble(abcMart ? 'uzura-abcmart-launcher' : 'uzura-vans-launcher', () => {
+    if (vans || abcMart || billys) {
+      const bubble = synovaBubble(abcMart ? 'uzura-abcmart-launcher' : billys ? 'uzura-billys-launcher' : 'uzura-vans-launcher', () => {
         panel.hidden = !panel.hidden;
       });
       panel.hidden = true;
