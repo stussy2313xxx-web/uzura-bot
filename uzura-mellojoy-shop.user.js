@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         うずら BOT — Mellojoy・Shop対応
 // @namespace    uzura.mellojoy.shop
-// @version      2.1.44.10949
+// @version      2.1.44.10950
 // @updateURL    https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.meta.js
 // @downloadURL  https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.user.js
 // @description  Mellojoy・Shopify・Supreme・HUMAN MADE・Buffer・Palace・and STの購入補助。購入成功時のDiscord通知に対応。
@@ -98,10 +98,10 @@
       heading.style.cssText = 'display:block;font-size:23px;font-weight:800;line-height:1.1';
       const header = document.createElement('header');
       header.style.cssText = 'display:flex;align-items:center;gap:9px';
-      const icon = document.createElement('img');
-      icon.src = SYNOVA_ICON;
-      icon.alt = '';
-      icon.style.cssText = 'width:40px;height:40px;border-radius:50%';
+      const icon = document.createElement('span');
+      icon.textContent = 'U';
+      icon.setAttribute('aria-hidden', 'true');
+      icon.style.cssText = 'display:grid;place-items:center;width:40px;height:40px;border-radius:50%;background:white;color:#0e1b2d;font-weight:800';
       const title = document.createElement('div');
       title.style.cssText = 'flex:1;min-width:0';
       const subtitle = document.createElement('small');
@@ -317,11 +317,13 @@
     stop('商品ページまたはカートで使えます');
     document.body.append(panel);
     if (vans || abcMart || billys) {
-      const bubble = synovaBubble(abcMart ? 'uzura-abcmart-launcher' : billys ? 'uzura-billys-launcher' : 'uzura-vans-launcher', () => {
-        panel.hidden = !panel.hidden;
-      });
-      panel.hidden = false;
-      bubble.show(false, false);
+      const launcher = document.createElement('button');
+      launcher.type = 'button';
+      launcher.textContent = 'U';
+      launcher.setAttribute('aria-label', 'うずら BOT を開く');
+      launcher.style.cssText = 'position:fixed;right:10px;bottom:calc(env(safe-area-inset-bottom) + 90px);z-index:2147483647;width:48px;height:48px;border-radius:50%;background:#0d1b32;color:white;border:2px solid white;font:bold 24px system-ui';
+      launcher.onclick = () => { panel.hidden = !panel.hidden; };
+      document.body.append(launcher);
       panel.style.top = 'calc(env(safe-area-inset-top) + 10px)';
       panel.style.bottom = 'auto';
     }
