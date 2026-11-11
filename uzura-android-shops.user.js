@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          うずら BOT Android — ショップ・購入通知
 // @namespace     uzura.bot.android.shops
-// @version       2.1.44.10961
+// @version       2.1.44.10962
 // @description   Android版。Shopify、Supreme、HUMAN MADE、Buffer、Palace、and STなどの購入補助とDiscord購入通知。
 // @match         https://*/*
 // @run-at        document-start
@@ -363,7 +363,8 @@
           saveProfile.disabled = false;
         }
       };
-      profile.append(saveProfile, note);
+      profile.append(saveProfile);
+      if (!billys) profile.append(note);
       const checkout = vans ? /^\/checkout(?:\/|$)/.test(location.pathname)
         : /^\/shop\/order\//.test(location.pathname);
       if (billys) {
@@ -417,10 +418,12 @@
         profile.append(paymentTitle, row, saveBrand);
         const cardKey = 'uzura-billys-encrypted-card-v1';
         const cardSettings = document.createElement('div');
-        function cardInput(label, numeric = false, masked = true) {
+        function cardInput(label, token, numeric = false) {
           const input = document.createElement('input');
-          input.type = masked ? 'password' : 'text';
-          input.autocomplete = 'off';
+          input.type = 'text';
+          input.name = token;
+          input.autocomplete = token;
+          input.disabled = !checkout;
           if (numeric) input.inputMode = 'numeric';
           input.placeholder = label;
           input.setAttribute('aria-label', label);
@@ -430,63 +433,37 @@
           cardSettings.append(row);
           return input;
         }
-        const number = cardInput('カード番号', true);
-        const expiry = cardInput('有効期限 MM/YY');
-        const cardholder = cardInput('カード名義（任意）', false, false);
-        const passphrase = cardInput('解除用パスフレーズ（12文字以上）');
+        const number = cardInput('カード番号', 'cc-number', true);
+        const expiry = cardInput('MM/YY', 'cc-exp');
+        const cardholder = cardInput('カード名義（例 TARO YAMADA）', 'cc-name');
         function cardButton(label, handler) {
           const button = document.createElement('button');
           button.type = 'button';
           button.style.marginTop = '6px';
           button.textContent = label;
           button.onclick = async () => {
-            for (const control of cardSettings.querySelectorAll('button')) control.disabled = true;
+            button.disabled = true;
             try { await handler(); }
             catch { report('カード情報を処理できませんでした。入力内容をご確認ください。'); }
-            finally {
-              passphrase.value = '';
-              for (const control of cardSettings.querySelectorAll('button')) control.disabled = false;
-            }
+            finally { button.disabled = false; }
           };
           cardSettings.append(button);
         }
-        async function deriveCardKey(salt) {
-          if (passphrase.value.length < 12) throw new Error('passphrase');
-          const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(passphrase.value),
-            'PBKDF2', false, ['deriveKey']);
-          return crypto.subtle.deriveKey({name: 'PBKDF2', salt, iterations: 600000, hash: 'SHA-256'},
-            material, {name: 'AES-GCM', length: 256}, false, ['encrypt', 'decrypt']);
-        }
-        cardButton('カードを暗号化して保存', async () => {
-          const digits = number.value.normalize('NFKC').replace(/[\s-]/g, '');
-          const date = expiry.value.normalize('NFKC').trim().match(/^(0[1-9]|1[0-2])\/(\d{2})$/);
-          if (!/^\d{13,19}$/.test(digits) || !date) throw new Error('card');
-          const salt = crypto.getRandomValues(new Uint8Array(16));
-          const iv = crypto.getRandomValues(new Uint8Array(12));
-          const key = await deriveCardKey(salt);
-          const data = await crypto.subtle.encrypt({name: 'AES-GCM', iv}, key,
-            new TextEncoder().encode(JSON.stringify([digits, date[1], date[2], cardholder.value.trim()])));
-          await GM.setValue(cardKey, {salt: Array.from(salt), iv: Array.from(iv), data: Array.from(new Uint8Array(data))});
+        cardButton('カード情報を消去', async () => {
           number.value = '';
           expiry.value = '';
           cardholder.value = '';
-          report('カード情報を暗号化して保存しました。');
-        });
-        cardButton('保存済みカードを削除', async () => {
           await GM.setValue(cardKey, null);
-          number.value = '';
-          expiry.value = '';
-          cardholder.value = '';
-          report('保存済みカードを削除しました。');
+          report('BOT欄と旧版の保存済みカードを消去しました。');
         });
         if (checkout) {
-          cardButton('解除してカード欄へ入力', async () => {
-            const saved = await GM.getValue(cardKey, null);
-            if (!saved) { report('登録済みカードがありません。'); return; }
-            const key = await deriveCardKey(Uint8Array.from(saved.salt));
-            const data = await crypto.subtle.decrypt({name: 'AES-GCM', iv: Uint8Array.from(saved.iv)},
-              key, Uint8Array.from(saved.data));
-            const [digits, month, year, name = ''] = JSON.parse(new TextDecoder().decode(data));
+          cardButton('購入画面のカード欄へ入力', () => {
+            const digits = number.value.normalize('NFKC').replace(/[\s-]/g, '');
+            const date = expiry.value.normalize('NFKC').trim().match(/^(0?[1-9]|1[0-2])\s*\/\s*(?:20)?(\d{2})$/);
+            if (!/^\d{13,19}$/.test(digits) || !date) throw new Error('card');
+            const month = date[1].padStart(2, '0');
+            const year = date[2];
+            const name = cardholder.value.trim();
             const controls = Array.from(document.querySelectorAll('input,select')).filter(control =>
               !control.matches(':disabled,[readonly],[type=hidden]') &&
               control.getClientRects().length && getComputedStyle(control).visibility === 'visible');
@@ -510,13 +487,18 @@
               control.dispatchEvent(new Event('change', {bubbles: true}));
               count++;
             }
+            if (count) {
+              number.value = '';
+              expiry.value = '';
+              cardholder.value = '';
+            }
             report(count ? 'カード欄に入力しました。残りの項目と注文内容をご確認ください。'
               : '入力できるカード欄が見つかりません。公式画面をご確認ください。');
           });
         }
         const cardNote = document.createElement('div');
         cardNote.className = 'desc';
-        cardNote.textContent = 'カード情報は暗号化して保存します。セキュリティコードは公式の購入画面で入力してください。';
+        cardNote.textContent = '事前登録はSafariの自動入力を使います。購入画面で保存済みカードを選んでください。セキュリティコードは公式欄で入力します。';
         profile.append(cardSettings, cardNote);
         void (async () => {
           try {
