@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          うずら BOT Android — ショップ・購入通知
 // @namespace     uzura.bot.android.shops
-// @version       2.1.44.10951
+// @version       2.1.44.10952
 // @description   Android版。Shopify、Supreme、HUMAN MADE、Buffer、Palace、and STなどの購入補助とDiscord購入通知。
 // @match         https://*/*
 // @run-at        document-start
@@ -175,7 +175,90 @@
         submit.textContent = time.value ? time.value + ' に予約・自動スタート' : '予約・自動スタート';
       };
       time.addEventListener('input', syncScheduleLabel);
-      search.append(timeRow, product, toolbar);
+      const profile = document.createElement('details');
+      profile.className = 'sec';
+      const summary = document.createElement('summary');
+      summary.textContent = '⚙️ 配送先・支払い';
+      profile.append(summary);
+      const profileKey = 'uzura-storefront-shipping-v1';
+      const fields = [
+        ['family-name', '姓'], ['given-name', '名'], ['postal-code', '郵便番号'],
+        ['address-level1', '都道府県'], ['address-level2', '市区町村'],
+        ['address-line1', '町名・番地'], ['address-line2', '建物名・部屋番号'],
+        ['tel', '電話番号'], ['email', 'メールアドレス']
+      ];
+      const inputs = new Map();
+      const note = document.createElement('div');
+      note.className = 'desc';
+      note.textContent = 'カードは公式の決済画面でブラウザの自動入力を利用してください。';
+      for (const [key, caption] of fields) {
+        const row = document.createElement('label');
+        row.className = 'r';
+        const input = document.createElement('input');
+        input.placeholder = caption;
+        input.setAttribute('aria-label', caption);
+        input.autocomplete = 'off';
+        inputs.set(key, input);
+        row.append(input);
+        profile.append(row);
+      }
+      const saveProfile = document.createElement('button');
+      saveProfile.type = 'button';
+      saveProfile.textContent = '配送先を保存';
+      saveProfile.disabled = true;
+      async function loadProfile() {
+        try {
+          const saved = await GM.getValue(profileKey, {});
+          for (const [key, input] of inputs) input.value = saved?.[key] || '';
+          saveProfile.disabled = false;
+        } catch {
+          report('配送先を読み込めませんでした。');
+        }
+      }
+      saveProfile.onclick = async () => {
+        saveProfile.disabled = true;
+        try {
+          const values = Object.fromEntries(Array.from(inputs, ([key, input]) => [key, input.value.trim()]));
+          await GM.setValue(profileKey, values);
+          report('配送先を保存しました。');
+        } catch {
+          report('配送先を保存できませんでした。');
+        } finally {
+          saveProfile.disabled = false;
+        }
+      };
+      profile.append(saveProfile, note);
+      const checkout = vans ? /^\/checkout(?:\/|$)/.test(location.pathname)
+        : /^\/shop\/order\//.test(location.pathname);
+      if (checkout) {
+        const fill = document.createElement('button');
+        fill.type = 'button';
+        fill.textContent = '空欄に配送先を入力';
+        fill.onclick = async () => {
+          let saved;
+          try { saved = await GM.getValue(profileKey, {}); }
+          catch { report('配送先を読み込めませんでした。'); return; }
+          let count = 0;
+          for (const [key] of fields) {
+            if (!saved?.[key]) continue;
+            const candidates = Array.from(document.querySelectorAll('input[autocomplete]')).filter(input =>
+              !input.matches(':disabled,[readonly],input[type=hidden],input[type=password]') &&
+              input.getClientRects().length &&
+              input.autocomplete.split(/\s+/).includes(key) &&
+              !input.autocomplete.split(/\s+/).includes('billing'));
+            if (candidates.length !== 1 || candidates[0].value.trim()) continue;
+            const input = candidates[0];
+            input.value = saved[key];
+            input.dispatchEvent(new Event('input', {bubbles: true}));
+            input.dispatchEvent(new Event('change', {bubbles: true}));
+            count++;
+          }
+          report(count ? count + '項目を入力しました。内容を確認してください。' : '入力できる空欄がありません。');
+        };
+        profile.append(fill);
+      }
+      void loadProfile();
+      search.append(timeRow, product, profile, toolbar);
       panel.prepend(header);
       panel.append(search, output, action);
       action.removeAttribute('style');
