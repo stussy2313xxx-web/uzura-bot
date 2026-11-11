@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          うずら BOT Android — ショップ・購入通知
 // @namespace     uzura.bot.android.shops
-// @version       2.1.44.10965
+// @version       2.1.44.10966
 // @description   Android版。Shopify、Supreme、HUMAN MADE、Buffer、Palace、and STなどの購入補助とDiscord購入通知。
 // @match         https://*/*
 // @run-at        document-start
@@ -136,6 +136,25 @@
       if (radio.checked) report('宅配ボックスを「指定しない」に設定しました。');
     }
 
+    function applyBillysCardReuseDefault() {
+      if (!billys || !reviewOrder || !findControl(/^(?:ご)?注文を確定する$/)) return;
+      const normalize = text => text.normalize('NFKC').replace(/\s+/g, '');
+      if (!normalize(document.body.innerText).includes('入力したクレジットカードを次回以降利用する')) return;
+      const radios = Array.from(document.querySelectorAll('input[type="radio"][name]'));
+      const hasLabel = (radio, text) => Array.from(radio.labels || []).some(label =>
+        label.getClientRects().length && getComputedStyle(label).visibility === 'visible' &&
+        normalize(label.innerText) === text);
+      const sameGroup = (a, b) => a.name === b.name && a.form === b.form;
+      const matches = radios.filter(radio =>
+        !radio.matches(':disabled,[aria-disabled="true"]') && hasLabel(radio, '利用する') &&
+        radios.some(other => sameGroup(radio, other) && hasLabel(other, '利用しない')));
+      if (matches.length !== 1) return;
+      const [radio] = matches;
+      if (radios.some(other => sameGroup(radio, other) && other.checked)) return;
+      radio.click();
+      if (radio.checked) report('カードの次回利用を「利用する」に設定しました。');
+    }
+
     function continueReview() {
       if (!reviewStore || (!reviewCart && !reviewOrder)) return;
       const reachedReview = () =>
@@ -149,6 +168,7 @@
       function check() {
         if (reachedReview()) {
           applyBillysDeliveryDefault();
+          applyBillysCardReuseDefault();
           finish(billys ? '「ご注文内容の確認」に到着しました。注文確定は手動です。'
             : 'Step3「カートの確認」に到着しました。内容を確認してご自身で確定してください。');
           return;
@@ -858,8 +878,10 @@
       }
       if (billys && reviewOrder) {
         applyBillysDeliveryDefault();
+        applyBillysCardReuseDefault();
         if (document.readyState !== 'complete') {
           window.addEventListener('load', applyBillysDeliveryDefault, {once: true});
+          window.addEventListener('load', applyBillysCardReuseDefault, {once: true});
         }
       }
     } else {
