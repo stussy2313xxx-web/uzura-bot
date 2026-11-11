@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         うずら BOT — Mellojoy・Shop対応
 // @namespace    uzura.mellojoy.shop
-// @version      2.1.44.10947
+// @version      2.1.44.10948
 // @updateURL    https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.meta.js
 // @downloadURL  https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.user.js
 // @description  Mellojoy・Shopify・Supreme・HUMAN MADE・Buffer・Palace・and STの購入補助。購入成功時のDiscord通知に対応。
@@ -94,7 +94,33 @@
       const submit = document.createElement('button');
       submit.textContent = '予約・自動スタート';
       const heading = document.createElement('strong');
-      heading.textContent = 'うずら BOT · ' + store;
+      heading.textContent = 'うずら BOT';
+      heading.style.cssText = 'display:block;font-size:23px;font-weight:800;line-height:1.1';
+      const header = document.createElement('header');
+      header.style.cssText = 'display:flex;align-items:center;gap:9px';
+      const icon = document.createElement('img');
+      icon.src = SYNOVA_ICON;
+      icon.alt = '';
+      icon.style.cssText = 'width:40px;height:40px;border-radius:50%';
+      const title = document.createElement('div');
+      title.style.cssText = 'flex:1;min-width:0';
+      const subtitle = document.createElement('small');
+      subtitle.style.cssText = 'color:#b9cbe4;font-weight:700';
+      subtitle.textContent = store;
+      title.append(heading, subtitle);
+      const position = document.createElement('button');
+      position.type = 'button';
+      position.textContent = '上下';
+      const hide = document.createElement('button');
+      hide.type = 'button';
+      hide.textContent = '隠す';
+      header.append(icon, title, position, hide);
+      position.onclick = () => {
+        const moveDown = Boolean(panel.style.top);
+        panel.style.top = moveDown ? '' : 'calc(env(safe-area-inset-top) + 10px)';
+        panel.style.bottom = moveDown ? 'calc(env(safe-area-inset-bottom) + 152px)' : 'auto';
+      };
+      hide.onclick = () => { panel.hidden = true; };
       const runNow = document.createElement('button');
       runNow.type = 'button';
       runNow.textContent = 'すぐ実行';
@@ -112,11 +138,13 @@
         output.hidden = !output.hidden;
       };
       panel.style.cssText += ';box-sizing:border-box;width:min(460px,calc(100vw - 24px));max-height:65vh;overflow:auto;border:1px solid #526b8d;border-radius:16px;box-shadow:0 6px 24px #0008';
+      panel.style.background = '#0e1b2d';
+      status.style.cssText = 'margin-top:8px;font-size:14px;font-weight:700';
       search.style.cssText = 'display:grid;gap:8px;margin:10px 0';
       for (const field of [keyword, time]) {
         field.style.cssText = 'box-sizing:border-box;width:100%;padding:9px;border:1px solid #526b8d;border-radius:8px;background:#192b45;color:white;font-size:16px';
       }
-      for (const button of [submit, runNow, cancel, showLog]) {
+      for (const button of [submit, runNow, cancel, showLog, position, hide]) {
         button.style.cssText = 'padding:8px;border:1px solid #526b8d;border-radius:8px;background:#223b5e;color:white;font-weight:bold';
       }
       const size = document.createElement('input');
@@ -124,9 +152,26 @@
       size.inputMode = 'decimal';
       size.setAttribute('aria-label', 'サイズ（cm）');
       size.style.cssText = keyword.style.cssText;
-      search.append(keyword, size, time, submit, runNow, cancel, showLog);
-      panel.prepend(heading, search);
-      panel.append(output);
+      const timeRow = document.createElement('label');
+      timeRow.style.cssText = 'display:grid;grid-template-columns:120px 1fr;align-items:center;gap:8px';
+      timeRow.append(time, '販売開始（日本時間）');
+      const productRow = document.createElement('label');
+      productRow.style.cssText = 'display:grid;grid-template-columns:36px 1fr;align-items:center;gap:8px;font-weight:700';
+      productRow.append('KW1', keyword);
+      const sizeRow = document.createElement('div');
+      sizeRow.style.cssText = 'padding-left:44px';
+      sizeRow.append(size);
+      const toolbar = document.createElement('div');
+      toolbar.style.cssText = 'display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px';
+      toolbar.append(runNow, cancel, showLog);
+      submit.style.cssText += ';background:#f1f5ff;color:#142139;min-height:40px';
+      const syncScheduleLabel = () => {
+        submit.textContent = time.value ? time.value + ' に予約・自動スタート' : '予約・自動スタート';
+      };
+      time.addEventListener('input', syncScheduleLabel);
+      search.append(timeRow, productRow, sizeRow, submit, toolbar);
+      panel.prepend(header);
+      panel.append(search, output, action);
       const key = 'uzura-vans-search';
       const sizeKey = 'uzura-storefront-cart-size';
       let reservation;
@@ -277,7 +322,8 @@
       });
       panel.hidden = true;
       bubble.show(false, false);
-      panel.style.bottom = 'calc(env(safe-area-inset-bottom) + 152px)';
+      panel.style.top = 'calc(env(safe-area-inset-top) + 10px)';
+      panel.style.bottom = 'auto';
     }
   }
   if (document.readyState !== 'loading') queueMicrotask(mount);
