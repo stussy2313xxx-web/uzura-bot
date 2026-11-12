@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          うずら BOT Android — ショップ・購入通知
 // @namespace     uzura.bot.android.shops
-// @version       2.1.44.10968
+// @version       2.1.44.10969
 // @description   Android版。Shopify、Supreme、HUMAN MADE、Buffer、Palace、and STなどの購入補助とDiscord購入通知。
 // @match         https://*/*
 // @run-at        document-start
@@ -910,7 +910,7 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
   if (!setupPage && !dedicated && !UZURA_CURRENT && !/(^|\.)(?:mellojoy(?:lucky\.cn|japan\.com|us\.com)|shop\.app|supreme\.com|humanmade\.jp|buffering\.jp)$|^(?:checkout\.)?jp\.palaceskateboards\.com$/i.test(location.hostname)) return;
   const VALID = /^https:\/\/discord\.com\/api\/webhooks\/1570274974416113755\/[\w-]+$/;
   const MONEY_LAB_GUILD = '1556313614053408889';
-  const MONEY_LAB_CHANNEL = '1556317116473544856';
+  const MONEY_LAB_CHANNEL = '1570274906040569976';
   const load = (k,d) => GM.getValue('uzura_notify_'+k,d);
   const save = (k,v) => GM.setValue('uzura_notify_'+k,v);
   if (setupPage) {
