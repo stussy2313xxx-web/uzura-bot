@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         うずら BOT — Mellojoy・Shop対応
 // @namespace    uzura.mellojoy.shop
-// @version      2.1.44.10967
+// @version      2.1.44.10968
 // @updateURL    https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.meta.js
 // @downloadURL  https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.user.js
 // @description  Mellojoy・Shopify・Supreme・HUMAN MADE・Buffer・Palace・and STの購入補助。購入成功時のDiscord通知に対応。
@@ -910,7 +910,7 @@ const uzuraLocaleRoot = path => { const m = /^\/([a-z]{2}(?:-[a-z]{2})?)\//i.exe
     new URLSearchParams(location.search).get('money-lab-notify') === 'setup';
   const dedicated = ['test.valladstudio.com', 'www.dot-st.com'].includes(location.hostname);
   if (!setupPage && !dedicated && !UZURA_CURRENT && !/(^|\.)(?:mellojoy(?:lucky\.cn|japan\.com|us\.com)|shop\.app|supreme\.com|humanmade\.jp|buffering\.jp)$|^(?:checkout\.)?jp\.palaceskateboards\.com$/i.test(location.hostname)) return;
-  const VALID = /^https:\/\/discord\.com\/api\/webhooks\/1569727749768093770\/[\w-]+$/;
+  const VALID = /^https:\/\/discord\.com\/api\/webhooks\/1570274974416113755\/[\w-]+$/;
   const MONEY_LAB_GUILD = '1556313614053408889';
   const MONEY_LAB_CHANNEL = '1556317116473544856';
   const load = (k,d) => GM.getValue('uzura_notify_'+k,d);
