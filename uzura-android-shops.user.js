@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name          うずら BOT Android — ショップ・購入通知
 // @namespace     uzura.bot.android.shops
-// @version       2.1.44.10969
-// @description   Android版。Shopify、Supreme、HUMAN MADE、Buffer、Palace、and STなどの購入補助とDiscord購入通知。
+// @version       2.1.44.10972
+// @description   Android版。Shopify、Supreme、HUMAN MADE、Buffer、Palace、and ST、VANS Japan、BASEなどの購入補助とDiscord購入通知。
 // @match         https://*/*
 // @run-at        document-start
 // @sandbox       DOM
@@ -16,7 +16,7 @@
   const vans = /^(?:www\.)?vans\.co\.jp$/.test(location.hostname);
   const abcMart = /^(?:www\.)?abc-mart\.net$/.test(location.hostname);
   const billys = /^(?:www\.)?billys-tokyo\.net$/.test(location.hostname);
-  if (window.top !== window || (!vans && !abcMart && !billys && location.hostname !== 'jp.topps.com')) return;
+  if (window.top !== window || vans || (!abcMart && !billys && location.hostname !== 'jp.topps.com')) return;
   const store = vans ? 'VANS JP' : abcMart ? 'ABC-MART' : billys ? 'BILLY’S' : 'Topps JP';
   const productPath = abcMart || billys ? /^\/shop\/g\/g[^/]+\/?$/i : /^\/p\//;
 
@@ -295,7 +295,7 @@
       status.className = 'st';
       search.className = 'body';
       const size = document.createElement('input');
-      size.placeholder = 'サイズ（cm、例 27.5）';
+      size.placeholder = vans ? 'サイズ（27.5 cm / US 9.5）' : 'サイズ（cm、例 27.5）';
       size.inputMode = 'decimal';
       size.setAttribute('aria-label', 'サイズ（cm）');
 
@@ -683,7 +683,7 @@
       function prepareProduct(url, startedAt) {
         if (size.value.trim()) {
           sessionStorage.setItem(sizeKey, JSON.stringify({
-            pathname: url.pathname, cm: Number(size.value), expires: abcMart ? Date.now() + 120000 : startedAt + 60000
+            pathname: url.pathname, cm: Number(size.value.trim().replace(/^US\s*/i, '').replace(/\s*cm$/i, '')), us: vans && /^US\s*\d/i.test(size.value.trim()), expires: abcMart ? Date.now() + 120000 : startedAt + 60000
           }));
         }
         if (url.href === location.href) location.reload();
@@ -724,8 +724,9 @@
           report('サイズ（cm）を入力してください。例 26.5');
           return;
         }
-        if (size.value.trim() && !/^(?:[1-3]\d)(?:\.[05])?$/.test(size.value.trim())) {
-          report('サイズはcmで入力してください（例 27.5）。');
+        const sizePattern = vans ? /^(?:(?:[1-3]\d)(?:\.[05])?(?:\s*cm)?|US\s*\d{1,2}(?:\.[05])?)$/i : /^(?:[1-3]\d)(?:\.[05])?$/;
+        if (size.value.trim() && !sizePattern.test(size.value.trim())) {
+          report(vans ? 'サイズを入力してください（例 27.5 cm または US 9.5）。' : 'サイズはcmで入力してください（例 27.5）。');
           return;
         }
         if (!scheduled) { lookup(query); return; }
@@ -828,7 +829,9 @@
             }
             const cm = String(target.cm).replace('.', '\\.');
             const jp = Number.isInteger(target.cm) ? cm + String.raw`(?:\.0)?` : cm;
-            const sizeText = String.raw`US\s*\d+(?:\.\d+)?\s*\(\s*JP\s*${jp}\s*(?:cm)?\s*\)`;
+            const sizeText = target.us
+              ? String.raw`US\s*${jp}\s*\(\s*JP\s*\d+(?:\.\d+)?\s*(?:cm)?\s*\)`
+              : String.raw`US\s*\d+(?:\.\d+)?\s*\(\s*JP\s*${jp}\s*(?:cm)?\s*\)`;
             const sizeLabel = new RegExp('^' + sizeText + '$', 'i');
             const selected = new RegExp(String.raw`サイズ\s*[:：]\s*${sizeText}`, 'i');
             let sizeClicked = false;
@@ -2043,7 +2046,7 @@ window.__synovashop = true;
 const SYNOVA_WEBHOOK = ''; // Author's fixed notification destination disabled.
 const SYNOVA_LOGO_B64 = '';
 const SYNOVA_NAME = 'うずら BOT';
-const UZURA_RELEASE = '2.1.44.10941';
+const UZURA_RELEASE = '2.1.44.10972';
 const SYNOVA_VERSION = '1.9.8';
 const SYNOVA_ICON = UZURA_SHOP_PANEL_ICON;
 const SYNOVA_TITLE = '';
@@ -2160,11 +2163,15 @@ const IS_PAL_STORE = HOST === 'jp.palaceskateboards.com';
 const IS_SUP = /(^|\.)supreme\.com$/.test(HOST);
 const IS_HM = /(^|\.)humanmade\.jp$/.test(HOST);
 const IS_BUF = /(^|\.)buffering\.jp$/.test(HOST);
+const IS_VANS = /(^|\.)vans\.co\.jp$/.test(HOST);
+const IS_BASE = !IS_VANS && !IS_PAL && !IS_SUP && !IS_HM && !IS_BUF && (/^(?:www\.)?everyonetokyo\.com$/.test(HOST) ||
+  !!document.querySelector('form.cot-itemOrder-form, [data-endpoint*="/load_items/"], img[src*="baseec-img-mng.akamaized.net"], link[href*="thebase.in"], script[src*="thebase.in"]'));
+const BASE_OR_VANS = IS_BASE || IS_VANS;
 // Shop Shopify b\u1ea5t k\u1ef3: nh\u1eadn ra b\u1eb1ng d\u1ea5u v\u1ebft trong HTML (kh\u00f4ng d\u00f9ng window.Shopify: Userscripts c\u00f3 th\u1ec3 ch\u1ea1y script \u1edf
 // "content world" kh\u00f4ng th\u1ea5y bi\u1ebfn c\u1ee7a trang). Mellojoy c\u00f3 BOT ri\u00eang -> b\u1ecf qua.
 const IS_SHOPAPP = /(^|\.)shop\.app$/.test(HOST);
 const IS_SHOPCOM = /(^|\.)shop\.com$/.test(HOST);     // ch\u1ee3 c\u1ee7a Shop (trang ch\u1ee7 shop.app chuy\u1ec3n sang) \u2013 kh\u00f4ng ph\u1ea3i shop
-const IS_GEN = !UZURA_PENDING_HOSTS.includes(HOST.replace(/^www\./, '')) && !IS_PAL && !IS_SUP && !IS_HM && !IS_BUF && !IS_PCI && !IS_SHOPAPP && !IS_SHOPCOM && !/mellojoy/i.test(HOST) && !/\.global-e\.com$/.test(HOST) &&
+const IS_GEN = !UZURA_PENDING_HOSTS.includes(HOST.replace(/^www\./, '')) && !IS_PAL && !IS_SUP && !IS_HM && !IS_BUF && !BASE_OR_VANS && !IS_PCI && !IS_SHOPAPP && !IS_SHOPCOM && !/mellojoy/i.test(HOST) && !/\.global-e\.com$/.test(HOST) &&
   (!!UZURA_CURRENT || !!document.querySelector('script#shopify-features, meta[name="shopify-checkout-api-token"], meta[name="shopify-digital-wallet"], ' +
     'link[href*="cdn.shopify.com"], script[src*="cdn.shopify.com"], script[src*="/cdn/shop/"], link[href*="/cdn/shop/"]'));
 const IS_SHOPIFY = IS_PAL || IS_SUP || IS_GEN;
@@ -2181,8 +2188,8 @@ const komojuInfo = (b) => ({ klast: b.klast || '', kfirst: b.kfirst || '', phone
   last: b.last || '', first: b.first || '', email: b.email || '', uwh: b.uwh || '', at: Date.now() });
 const KSTORES = [['seven', '\u30bb\u30d6\u30f3-\u30a4\u30ec\u30d6\u30f3', /\u30bb\u30d6\u30f3|7-?eleven/i], ['lawson', '\u30ed\u30fc\u30bd\u30f3', /\u30ed\u30fc\u30bd\u30f3|lawson/i], ['family', '\u30d5\u30a1\u30df\u30ea\u30fc\u30de\u30fc\u30c8', /\u30d5\u30a1\u30df\u30ea\u30fc\u30de\u30fc\u30c8|familymart/i],
   ['ministop', '\u30df\u30cb\u30b9\u30c8\u30c3\u30d7', /\u30df\u30cb\u30b9\u30c8\u30c3\u30d7|ministop/i], ['daily', '\u30c7\u30a4\u30ea\u30fc\u30e4\u30de\u30b6\u30ad', /\u30c7\u30a4\u30ea\u30fc|daily/i], ['seico', '\u30bb\u30a4\u30b3\u30fc\u30de\u30fc\u30c8', /\u30bb\u30a4\u30b3\u30fc\u30de\u30fc\u30c8|seicomart/i]];
-const SITE_KEY = IS_PAL ? 'pal' : IS_SUP ? 'sup' : IS_HM ? 'hm' : IS_BUF ? 'buf' : 'shp';
-const SHOP = IS_PAL ? 'PALACE JP' : IS_SUP ? 'Supreme JP' : IS_HM ? 'HUMAN MADE' : IS_BUF ? 'Buffer' : UZURA_CURRENT?.name || HOST.replace(/^www\./, '');
+const SITE_KEY = IS_PAL ? 'pal' : IS_SUP ? 'sup' : IS_HM ? 'hm' : IS_BUF ? 'buf' : IS_VANS ? 'vans' : IS_BASE ? 'base' : 'shp';
+const SHOP = IS_PAL ? 'PALACE JP' : IS_SUP ? 'Supreme JP' : IS_HM ? 'HUMAN MADE' : IS_BUF ? 'Buffer' : IS_VANS ? 'Vans JP' : UZURA_CURRENT?.name || HOST.replace(/^www\./, '');
 const ON_CHECKOUT = /\/checkouts?\b|\/checkout\//i.test(location.pathname);
 const K_CART = 'sxb_cart_snap';             // gi\u1ecf h\u00e0ng l\u00fac v\u00e0o trang thanh to\u00e1n (\u0111\u01a1n kh\u00f4ng qua BOT v\u1eabn c\u00f3 \u1ea3nh + t\u00ean m\u00f3n)
 const K_LAST = 'sxb_last';
@@ -2244,7 +2251,7 @@ const PREFS = ['\u5317\u6d77\u9053', '\u9752\u68ee\u770c', '\u5ca9\u624b\u770c',
   '\u5bae\u5d0e\u770c', '\u9e7f\u5150\u5cf6\u770c', '\u6c96\u7e04\u770c'];
 
 // ===================== Khung BOT (m\u1ecdi trang, tr\u1eeb trang thanh to\u00e1n) =====================
-if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_SUP || IS_HM || IS_BUF || IS_GEN)) (function sxbMain() {
+if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_SUP || IS_HM || IS_BUF || BASE_OR_VANS || IS_GEN)) (function sxbMain() {
   'use strict';
   if (!document.body) { setTimeout(sxbMain, 200); return; }   // v\u00e0i shop d\u1ef1ng trang ch\u1eadm: ch\u01b0a c\u00f3 <body> th\u00ec ch\u1edd
 
@@ -2254,7 +2261,7 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
   const FAST_MS = 200, MAX_INFLIGHT = 5;      // gi\u1edd m\u1edf b\u00e1n: 0,2 gi\u00e2y/l\u01b0\u1ee3t, t\u1ed1i \u0111a 5 l\u01b0\u1ee3t c\u00f9ng l\u00fac
   const NOW_MS = 300, NOW_INFLIGHT = 4;       // "Ch\u1ea1y Ngay" / canh l\u00e2u: 0,3 gi\u00e2y/l\u01b0\u1ee3t, 4 l\u01b0\u1ee3t c\u00f9ng l\u00fac (tr\u01b0\u1edbc: 0,8 gi\u00e2y, ch\u1edd l\u01b0\u1ee3t tr\u01b0\u1edbc xong)
   const FAST_FOR_MS = 30000;
-  const minMonitorDelay = IS_PAL || IS_GEN ? 1500 : FAST_MS;
+  const minMonitorDelay = IS_PAL || IS_GEN || BASE_OR_VANS ? 1500 : FAST_MS;
   // b\u1ecb 429: nh\u1ecbp t\u1ef1 gi\u00e3n (\u00d71,6 m\u1ed7i l\u1ea7n, t\u1ed1i \u0111a \u00d78), qu\u00e9t \u0111\u01b0\u1ee3c l\u1ea1i th\u00ec nhanh d\u1ea7n v\u1ec1 nh\u1ecbp g\u1ed1c
   let pace = 1;
   const BACKOFF_MIN = 1000, BACKOFF_MAX = 8000;   // 429: ngh\u1ec9 1 \u2192 2 \u2192 4 \u2192 8 gi\u00e2y
@@ -2306,13 +2313,18 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
     return ws.length > 0 && ws.every((w) => t.includes(w) || flat.includes(w) || (w.length >= 5 && tw.some((x) => near(x, w))));
   }
   // \u00f4 M\u00e0u: "black" kh\u1edbp Black ; "black,white" = \u01b0u ti\u00ean theo th\u1ee9 t\u1ef1 ; tr\u1ed1ng = m\u00e0u n\u00e0o c\u0169ng \u0111\u01b0\u1ee3c
-  const wantColors = (s) => (s || '').split(/[,\u3001/|]/).map((x) => words(x)).filter(Boolean);
+  const wantColors = (s) => (s || '').split(BASE_OR_VANS ? /[&＆,、/|]/ : /[,\u3001/|]/).map((x) => words(x)).filter(Boolean);
   const colorOk = (val, want) => { const v = words(val); return v === want || v.includes(want) || v.replace(/ /g, '').includes(want.replace(/ /g, '')); };
   const RANDOM = ['', 'random', 'any', '\u30e9\u30f3\u30c0\u30e0', '*', 'all', 'free'];
   const SZ = { '2xlarge':'xxlarge', 'onesize':'onesize', 'os':'onesize', xs: 'xsmall', s: 'small', m: 'medium', l: 'large', xl: 'xlarge', xxl: 'xxlarge', '2xl': 'xxlarge', xxxl: 'xxxlarge', '3xl': 'xxxlarge' };
   const sz = (s) => norm(s).replace(/[\s\-_.]/g, '');
   // "M" kh\u1edbp "Medium" (Supreme) v\u00e0 "2(M)" (HUMAN MADE / Buffer); "2" kh\u1edbp "2(M)"
   function sizeOk(val, want) {
+    if (IS_VANS) {
+      const sizes = norm(val).match(/us\s*(\d+(?:\.\d+)?)\s*\(\s*jp\s*(\d+(?:\.\d+)?)/);
+      const request = norm(want).trim().match(/^(us\s*)?(\d+(?:\.\d+)?)(?:\s*cm)?$/);
+      if (sizes && request) return Number(sizes[request[1] ? 1 : 2]) === Number(request[2]);
+    }
     const v = sz(val), w = sz(want);
     if (!w || v === w || (SZ[v] || v) === (SZ[w] || w)) return true;
     const inner = (v.match(/\(([^)]+)\)/) || [])[1];
@@ -2320,12 +2332,13 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
     return v.split('(')[0] === w;
   }
   // \u00f4 Size: "M,L" = \u01b0u ti\u00ean theo th\u1ee9 t\u1ef1 ; tr\u1ed1ng / random = size n\u00e0o c\u00f2n c\u0169ng \u0111\u01b0\u1ee3c
-  const wantSizes = (s) => { const p = (s || '').split(/[,\u3001/|]/).map((x) => x.trim()).filter(Boolean); return p.length && !p.some((x) => RANDOM.includes(sz(x))) ? p : null; };
+  const wantSizes = (s) => { const p = (s || '').split(BASE_OR_VANS ? /[&＆,、/|]/ : /[,\u3001/|]/).map((x) => x.trim()).filter(Boolean); return p.length && !p.some((x) => RANDOM.includes(sz(x))) ? p : null; };
   function pickSize(opts, want) {             // opts: [{size, ok}] -> ch\u1ecdn 1 c\u00e1i c\u00f2n h\u00e0ng
     const avail = opts.filter((o) => o.ok);
     if (!avail.length) return null;
     const ws = wantSizes(want);
     if (!ws) return avail[Math.floor(Math.random() * avail.length)];
+    if (BASE_OR_VANS && /[&＆]/.test(want)) return rnd(avail.filter(x => ws.some(w => sizeOk(x.size, w)))) || null;
     for (const w of ws) { const o = avail.find((x) => sizeOk(x.size, w)); if (o) return o; }
     return null;
   }
@@ -2577,18 +2590,19 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
   };
 
   // ===================== HUMAN MADE / Buffer (Salesforce Commerce Cloud) =====================
-  const SITE_ID = IS_HM ? 'HUMANMADE' : 'BUFFER';
+  const SITE_ID = IS_HM ? 'HUMANMADE' : IS_VANS ? 'vns-jp' : 'BUFFER';
   const C = `/on/demandware.store/Sites-${SITE_ID}-Site/ja_JP`;
   const sfcc = {
     focus: [], round: 0, info: {},
     gridUrl() {
-      const u = cfg.grid || `${C}/Search-UpdateGrid?cgid=all`;
+      const u = cfg.grid || (IS_VANS ? `${C}/Search-UpdateGrid?srule=new-arrival&q=` : `${C}/Search-UpdateGrid?cgid=all`);
       return u.replace(/([?&])(start|sz)=\d+/g, '$1').replace(/[?&]+$/, '') + (u.includes('?') ? '&' : '?') + 'start=0&sz=48';
     },
     async list() {
       this.round++;
       if (this.focus.length && this.round % 3) return { products: this.focus.map((k) => this.info[k]).filter(Boolean), partial: true };
       const r = await get(this.gridUrl(), { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+      if (IS_VANS && r.status === 404 && !cfg.grid) return { products: [], partial: false };
       if (r.status >= 400) throw new Error('HTTP ' + r.status);
       const d = new DOMParser().parseFromString(r.text, 'text/html');
       const out = [];
@@ -2641,10 +2655,10 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
         for (const w of wc) { const c = colors.find((v) => colorOk(v.displayValue || v.value, w) || colorOk(v.value, w)); if (c) { color = c.value; break; } }
         if (!color && (attrs.color || []).length) return null;
       } else color = (colors.find((v) => kwn.includes(words(v.displayValue || v.value))) || colors.find((v) => v.selected) || colors[0] || {}).value;
-      const sizeList = (a) => (a.size || []).map((v) => ({ size: v.value, label: v.displayValue || v.value, ok: v.selectable !== false }));
+      const sizeList = (a) => (a.size || []).map((v) => ({ size: IS_VANS ? v.displayValue || v.value : v.value, value: v.value, label: v.displayValue || v.value, ok: v.selectable !== false }));
       let sizes = sizeList(attrs), size = '';
       // size \u0111o\u00e1n tr\u01b0\u1edbc theo l\u1ea7n h\u1ecfi g\u1ea7n nh\u1ea5t (k\u1ec3 c\u1ea3 size \u0111ang h\u1ebft: c\u00f3 th\u1ec3 v\u1eeba c\u00f3 l\u1ea1i)
-      if (sizes.length) { const o = pickSize(sizes, want) || pickSize(sizes.map((x) => ({ ...x, ok: true })), want); if (!o) return null; size = o.size; }
+      if (sizes.length) { const o = pickSize(sizes, want) || pickSize(sizes.map((x) => ({ ...x, ok: true })), want); if (!o) return null; size = o.value; }
       let v = (await this.pv(p.key, color, size)).product || {};
       if (v.LotteryExclusive) { p.lottery = true; return null; }
       const fresh = {};
@@ -2653,8 +2667,8 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
       const ready = (x) => x.id && !(x.id === p.key && sizes.length) && x.available && x.orderable !== false && x.readyToOrder !== false;
       if (!ready(v) && sizes.length) {                // size \u0111o\u00e1n \u0111\u00e3 h\u1ebft -> ch\u1ecdn size kh\u00e1c \u0111ang c\u00f2n theo k\u1ebft qu\u1ea3 m\u1edbi
         const o = pickSize(sizeList(fresh), want);
-        if (!o || o.size === size) return null;
-        size = o.size;
+        if (!o || o.value === size) return null;
+        size = o.value;
         v = (await this.pv(p.key, color, size)).product || {};
       }
       if (!v.id || v.id === p.key && sizes.length) return null;
@@ -2790,11 +2804,129 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
     get checkout(){return this.checkoutUrl;}
   };
 
-  const shop = IS_PAL ? palace : IS_SUP ? sup : IS_GEN ? gen : sfcc;
+  const base = {
+    home: null, homeAt: 0, checkout: '',
+    idOf(tok) { const t = String(tok || '').trim();
+      if (/^\d{5,}$/.test(t)) return t;
+      try {
+        const url = new URL(t, location.origin);
+        return url.origin === location.origin ? (/^\/items\/(\d{5,})\/?$/.exec(url.pathname)?.[1] || '') : '';
+      } catch { return ''; } },
+    parse(html, id) {
+      const fa = html.indexOf('cot-itemOrder-form"');
+      if (fa < 0) return null;
+      const fs = html.lastIndexOf('<form', fa), fe = html.indexOf('</form>', fa);
+      const d = new DOMParser().parseFromString(html.slice(fs, fe > 0 ? fe + 7 : fa + 80000), 'text/html');
+      const f = d.querySelector('form.cot-itemOrder-form');
+      if (!f) return null;
+      const T = (e) => (e && e.textContent || '').replace(/\s+/g, ' ').trim();
+      const meta = (pr) => {
+        const m = html.match(new RegExp('<meta[^>]+property="' + pr + '"[^>]*content="([^"]*)"'));
+        if (!m) return '';
+        const t = document.createElement('textarea'); t.innerHTML = m[1]; return t.value;
+      };
+      const title = (meta('og:title') || '').replace(/\s*\|[^|]*$/, '').trim() || ('BASE ' + id);
+      const price = (html.match(/cot-money__amount">([\d,]+)</) || [])[1];
+      const vars = [...f.querySelectorAll('li.cot-itemOrder-variationLI')].map((li) => {
+        const name = T(li.querySelector('.cot-itemOrder-variationName'));
+        const b = li.querySelector('.cot-itemOrder-variationSubmit[data-variation-id]');
+        const stock = li.querySelector('.cot-itemOrder-variationStock');
+        const sold = !b || (stock && (stock.getAttribute('data-type') === 'soldOut' || /\u5728\u5eab\u306a\u3057|SOLD ?OUT|\u58f2\u308a\u5207\u308c/i.test(T(stock))));
+        const vid = (b || li.querySelector('[data-variation-id]') || { getAttribute: () => '' }).getAttribute('data-variation-id') || '';
+        return { vid, name, size: name.split(/\s*[\/\uff0f]\s*/).pop(), label: name, ok: !sold };
+      }).filter((v) => v.vid);
+      return {
+        id, title, image: meta('og:image'), price: price ? '\u00a5' + price : '', limit: +((html.match(/(\d+)\s*\u70b9\u307e\u3067\u306e\u3054\u6ce8\u6587/) || [])[1] || 0),
+        vars, single: !vars.length, singleOk: !vars.length && !!f.querySelector('.cot-itemOrder-submit') && !f.querySelector('#itemUnavailable'),
+        lottery: /class="cot-itemAttention__lottery/.test(html), soon: /cot-itemAttention__salesPeriod[^>]*data-status="willStart"/.test(html),
+        action: f.getAttribute('action') || '', shopId: f.getAttribute('data-shop-id') || (f.querySelector('[name=shopID]') || {}).value || '',
+      };
+    },
+    async item(id) {
+      // 12/11 ch\u1ea1y th\u1eadt: /items/<id> b\u1ecb Cloudflare l\u01b0u \u0111\u1ec7m (s-maxage=20, c\u1ea3 b\u1ea3n STALE; th\u00eam ?query v\u1eabn tr\u00fang \u0111\u1ec7m) -> 20:00 m\u1edf b\u00e1n
+      // m\u00e0 BOT th\u1ea5y h\u00e0ng l\u00fac 20:00:28. /items/<id>/ (d\u1ea5u / cu\u1ed1i) lu\u00f4n DYNAMIC = trang m\u1edbi t\u1eeb m\u00e1y ch\u1ee7.
+      const r = await get('/items/' + id);
+      if (r.status === 404) return { id, gone: true };
+      return this.parse(r.text, id) || { id, gone: true };
+    },
+    // KW l\u00e0 ch\u1eef: t\u00ecm theo t\u00ean trong trang ch\u1ee7 shop (m\u00f3n m\u1edbi nh\u1ea5t), \u0111\u1ecdc l\u1ea1i trang ch\u1ee7 t\u1ed1i \u0111a 10 gi\u00e2y / l\u1ea7n
+    async search(kw) {
+      if (!this.home || Date.now() - this.homeAt > 10000) {
+        const r = await get('/');
+        const d = new DOMParser().parseFromString(r.text, 'text/html');
+        const m = new Map();
+        for (const a of d.querySelectorAll('a[href*="/items/"]')) {
+          const id = this.idOf(a.getAttribute('href'));
+          const t = [(a.textContent || ''), a.getAttribute('title') || '', (a.querySelector('img[alt]') || {}).alt || ''].join(' ').replace(/\s+/g, ' ').trim();
+          if (id && t) m.set(id, ((m.get(id) || '') + ' ' + t).trim());
+        }
+        this.home = [...m]; this.homeAt = Date.now();
+      }
+      return this.home.filter(([, t]) => match(t, kw)).map(([id]) => id).slice(0, 3);
+    },
+    list: async () => ({ products: [], partial: true }),
+    setFocus() {},
+    // g\u1eedi form th\u00eam gi\u1ecf c\u1ee7a shop -> nh\u1eadn link checkout/bag (ch\u01b0a v\u00e0o gi\u1ecf: trang \u0111\u00f3 m\u1edbi th\u00eam). 1 m\u00f3n / l\u1ea7n.
+    async add(items) {
+      const x = items[0];
+      if (items.length > 1) log(L(`BASE \u306f1\u56de1\u70b9\u306e\u307f\u8cfc\u5165: ${x.name.slice(0, 24)}`, `BASE m\u1ed7i l\u1ea7n ch\u1ec9 mua 1 m\u00f3n: ${x.name.slice(0, 24)}`));
+      const action = new URL(x.action || `/cart/add/${x.shopId}`, location.origin);
+      if (action.origin !== location.origin || !/^\/cart\/add\/[\w-]+\/?$/.test(action.pathname)) return [];
+      const r = await fetch(action, { method: 'POST', credentials: 'same-origin',
+        body: new URLSearchParams({ shopID: x.shopId, id: x.itemId, amount: String(x.qty), select: x.vid || '' }) });
+      if (r.status === 429) throw new Http429(parseFloat(r.headers.get('Retry-After')) || 0);
+      if (!r.ok || new URL(r.url || location.origin).origin !== location.origin || !/\/checkout\/bag\?/.test(r.url)) { log(L('\u8ffd\u52a0\u5931\u6557: ', 'Th\u00eam th\u1ea5t b\u1ea1i: ') + x.name.slice(0, 24) + ' (HTTP ' + r.status + ')'); return []; }
+      this.checkout = r.url;
+      return [x];
+    },
+    prune: async () => [],
+    clearAll: async () => 0,
+  };
+  async function baseScan() {
+    const rows = cfg.items.slice(0, cfg.kwCount).map((it, i) => ({ ...it, i })).filter((it) => it.kw.trim());
+    const RANK = { none: 0, out: 1, soon: 2, lottery: 3 };
+    const res = await Promise.all(rows.map(async (it) => {
+      let ids = it.kw.split(/[&\uff06,\s]+/).filter(Boolean).map((t) => base.idOf(t));
+      if (!ids.length || !ids.every(Boolean)) ids = await base.search(it.kw);
+      if (!ids.length) return { it, s: 'none', hit: null };
+      const ps = await Promise.all([...new Set(ids)].map((id) => base.item(id)));
+      const wc = wantColors(it.color);
+      const colorHit = (t) => wc.some((w) => colorOk(t, w));
+      const cands = [];
+      let s = 'none';
+      const up = (x) => { if (RANK[x] > RANK[s]) s = x; };
+      for (const p of ps) {
+        if (!p || p.gone) continue;
+        if (p.lottery) { up('lottery'); continue; }
+        if (p.soon) { up('soon'); continue; }
+        up('out');
+        let opts;
+        if (p.single) opts = p.singleOk && (!wc.length || colorHit(p.title)) ? [{ vid: '', size: '-', label: '-', ok: true }] : [];
+        else opts = wc.length && !colorHit(p.title) ? p.vars.filter((v) => colorHit(v.name)) : p.vars;
+        const o = p.single ? opts[0] : pickSize(opts, it.size);
+        if (o) cands.push({ p, o });
+      }
+      if (!cands.length) return { it, s, hit: null };
+      const { p, o } = rnd(cands);
+      return { it, s: 'in', hit: { id: p.id + ':' + o.vid, itemId: p.id, vid: o.vid, qty: Math.max(1, p.limit ? Math.min(it.qty, p.limit) : it.qty),
+        name: p.title, url: location.origin + '/items/' + p.id, image: p.image, size: o.label || '-', price: p.price, action: p.action, shopId: p.shopId } };
+    }));
+    const picked = [], stat = [];
+    for (const { it, s, hit } of res) {
+      if (hit && !picked.some((x) => x.id === hit.id)) picked.push(hit);
+      stat.push({ label: `KW${it.i + 1}`, kw: it.kw + (it.color ? ` / ${it.color}` : '') + (it.size ? ` [${it.size}]` : ''), st: hit ? 'in' : s });
+    }
+    kwStat = stat;
+    return picked.slice(0, 1);
+  }
+
+  const rnd = (items) => items[Math.floor(Math.random() * items.length)];
+  const shop = IS_PAL ? palace : IS_SUP ? sup : IS_GEN ? gen : IS_BASE ? base : sfcc;
 
   // ---------- 1 l\u01b0\u1ee3t qu\u00e9t: t\u00ecm m\u00f3n kh\u1edbp t\u1eeb kh\u00f3a, ch\u1ecdn size c\u00f2n h\u00e0ng ----------
   const blindAt = {}, blindSt = {};            // th\u00eam gi\u1ecf th\u1eb3ng b\u1eb1ng variant ID: l\u1ea7n th\u1eed g\u1ea7n nh\u1ea5t / k\u1ebft qu\u1ea3
   async function scan() {
+    if (IS_BASE) return baseScan();
     const { products, partial } = await shop.list();
     hits429 = 0; cfHits = 0;
     const rows = cfg.items.slice(0, cfg.kwCount).map((it, i) => ({ ...it, i })).filter((it) => it.kw.trim());
@@ -2802,9 +2934,18 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
     // m\u1ed7i t\u1eeb kh\u00f3a d\u00f2 song song (HUMAN MADE / Buffer ph\u1ea3i h\u1ecfi kho t\u1eebng m\u00f3n: tr\u01b0\u1edbc \u0111\u00e2y h\u1ecfi l\u1ea7n l\u01b0\u1ee3t -> ch\u1eadm)
     // ---- \u00f4 t\u1eeb kh\u00f3a l\u00e0 M\u00c3 BI\u1ebeN TH\u1ec2 ----
     // Shopify: variant ID (ch\u1ec9 s\u1ed1, VD 42728889876830) ; HUMAN MADE / Buffer: m\u00e3 h\u00e0ng (VD BF31TE050BK903 / HM29CS001)
-    const vidOf = (kw) => { const k = kw.trim(); return IS_SHOPIFY ? (/^\d{8,}$/.test(k) ? k : '') : (/^[A-Z0-9]{8,}$/i.test(k) && /\d/.test(k) && /[A-Z]/i.test(k) ? k.toUpperCase() : ''); };
+    const vidOf = (kw) => {
+      let k = kw.trim();
+      if (IS_VANS && /^https?:/i.test(k)) {
+        try {
+          const url = new URL(k);
+          if (url.origin !== location.origin || !url.pathname.startsWith('/p/')) return '';
+          k = url.pathname.match(/([A-Z0-9]{8,})\.html$/i)?.[1] || '';
+        } catch { return ''; }
+      }
+      return IS_SHOPIFY ? (/^\d{8,}$/.test(k) ? k : '') : (/^[A-Z0-9]{8,}$/i.test(k) && /\d/.test(k) && /[A-Z]/i.test(k) ? k.toUpperCase() : ''); };
     // nhi\u1ec1u m\u00e3 n\u1ed1i b\u1eb1ng & (d\u1ea5u ph\u1ea9y / kho\u1ea3ng tr\u1eafng c\u0169ng \u0111\u01b0\u1ee3c), VD 111&222&333 -> m\u1ed7i \u00f4 v\u1eabn ch\u1ec9 ra 1 m\u00f3n, ch\u1ecdn NG\u1eaaU NHI\u00caN 1 m\u00e3 (user y\u00eau c\u1ea7u 2/11)
-    const vidsOf = (kw) => { const a = kw.split(/[&,\s]+/).filter(Boolean).map(vidOf); return a.length && a.every(Boolean) ? [...new Set(a)] : []; };
+    const vidsOf = (kw) => { const a = kw.split(IS_VANS ? /[&＆,\s]+/ : /[&,\s]+/).filter(Boolean).map(vidOf); return a.length && a.every(Boolean) ? [...new Set(a)] : []; };
     const pickOne = (a) => a[Math.floor(Math.random() * a.length)];
     const listedV = (id) => { for (const p of products) { const v = (p.variants || []).find((x) => String(x.id) === id); if (v) return v; } return null; };
     function pickVid(vids) {
@@ -2913,11 +3054,12 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
       const pre = items.filter((x) => x.added), rest = items.filter((x) => !x.added);
       ok = [...pre, ...(rest.length ? await shop.add(rest) : [])];
     } catch (e) {
-      if (IS_GEN && e instanceof Http429) { adding = false; throw e; }
+      if ((IS_GEN || BASE_OR_VANS) && e instanceof Http429) { adding = false; throw e; }
       if (IS_GEN && e instanceof Blocked) { finish(e.message); return false; }
       log(L('\u30ab\u30fc\u30c8\u8ffd\u52a0\u30a8\u30e9\u30fc: ', 'L\u1ed7i th\u00eam gi\u1ecf: ') + e.message);
     }
     if (ok.length) {
+      if (BASE_OR_VANS && !st.active) return false;
       if (IS_GEN) {
         if (!st.active) return false;
         try {
@@ -2928,7 +3070,7 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
         }
         if (!st.active) return false;
         log('カートの商品・数量を確認しました');
-      } else {
+      } else if (!BASE_OR_VANS) {
         // gi\u1ecf c\u00f2n m\u00f3n kh\u00e1c (th\u00eam tay t\u1eeb tr\u01b0\u1edbc / l\u01b0\u1ee3t c\u0169) -> xo\u00e1, \u0111\u1ec3 trang thanh to\u00e1n ch\u1ec9 c\u00f3 m\u00f3n trong KW
         try {
           const extra = await shop.prune(ok);
@@ -2938,12 +3080,13 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
       // mua xong: D\u1eeaNG H\u1eb2N (kh\u00f4ng t\u1ef1 b\u1eadt l\u1ea1i khi quay v\u1ec1 trang shop / t\u1ea3i l\u1ea1i trang)
       st.active = false; st.now = false; st.boughtAt = Date.now(); st.reloads = []; save(K_ST, st);
       setStatus(L('\u30ab\u30fc\u30c8\u8ffd\u52a0\u5b8c\u4e86 \u2192 \u8cfc\u5165\u753b\u9762\u3078\uff08BOT\u505c\u6b62\uff09', '\u0110\u00e3 v\u00e0o gi\u1ecf \u2192 sang thanh to\u00e1n (BOT \u0111\u00e3 d\u1eebng)'));
+      if (IS_VANS) setStatus('カート追加完了。公式カートでお支払い方法を選択してください。');
       if (IS_PAL) setStatus('Palaceの在庫を確認 → カートリンクへ進みます。投入結果・金額・注文内容を確認してください。');
       try { localStorage.removeItem('sxb_pay_used'); } catch (e) {}
       save(K_LAST, { shop: SHOP, site: HOST, at: Date.now(), items: ok.map((x) => ({ title: x.name, url: x.url, image: synovaThumb(x.image), size: x.size, price: x.price, qty: x.qty })) });
       gmSet('sxb_bot_buy', { at: Date.now(), host: HOST });
       if (IS_PAL) gmSet('uzura_palace_last', { shop: SHOP, site: HOST, at: Date.now(), items: ok.map(x => ({title:x.name,url:x.url,image:x.image,size:x.size,price:x.price,qty:x.qty})) });
-      location.href = shop.checkout;               // chuy\u1ec3n trang NGAY, ghi log sau
+      location.href = IS_VANS ? '/cart/' : shop.checkout;               // chuy\u1ec3n trang NGAY, ghi log sau
       log(L('\u5728\u5eab\u3042\u308a \u2192 \u30ab\u30fc\u30c8\u306b\u8ffd\u52a0 \u2192 \u8cfc\u5165\u753b\u9762\u3078: ', 'C\u00f3 h\u00e0ng \u2192 \u0111\u00e3 v\u00e0o gi\u1ecf \u2192 sang thanh to\u00e1n: ') +
         ok.map((x) => `${x.name.slice(0, 22)} (${x.size})\u00d7${x.qty}`).join(', ') + ` \u00b7 ${Math.round(performance.now() - t0)}ms`);
       beep();
@@ -2993,7 +3136,7 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
           if (hits429 === 1) log(L('\u30a2\u30af\u30bb\u30b9\u5236\u9650(429) \u2192 \u5c11\u3057\u5f85\u3063\u3066\u518d\u958b', 'B\u1ecb gi\u1edbi h\u1ea1n (429) \u2192 ch\u1edd ch\u00fat r\u1ed3i qu\u00e9t ti\u1ebfp'));
         }
       } else if (e.blocked) {
-        if (IS_PAL) { finish(e.message); return; }
+        if (IS_PAL || BASE_OR_VANS) { finish(e.message); return; }
         // Cloudflare / Queue-it: tr\u00ecnh duy\u1ec7t th\u1eadt t\u1ef1 qua khi t\u1ea3i l\u1ea1i trang -> BOT ch\u1ea1y ti\u1ebfp sau khi t\u1ea3i l\u1ea1i
         cfHits++;
         log(L(`${e.message} \u691c\u51fa \u2192 \u30da\u30fc\u30b8\u518d\u8aad\u307f\u8fbc\u307f`, `G\u1eb7p ${e.message} \u2192 t\u1ea3i l\u1ea1i trang`) + ` (${cfHits})`);
@@ -3035,21 +3178,21 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
       setStatus(L('\u5728\u5eab\u76e3\u8996\u4e2d\u2026', '\u0110ang canh h\u00e0ng\u2026') + (pace > 1.05 ? ` (\u00d7${pace.toFixed(1)})` : ''));
       // c\u00e1c l\u01b0\u1ee3t ch\u1ed3ng l\u00ean nhau (kh\u00f4ng ch\u1edd l\u01b0\u1ee3t tr\u01b0\u1edbc tr\u1ea3 l\u1eddi): m\u1ea1ng ch\u1eadm v\u1eabn c\u00f3 k\u1ebft qu\u1ea3 m\u1edbi li\u00ean t\u1ee5c
       const fast = !st.now && left > -FAST_FOR_MS;
-      if (IS_PAL || IS_GEN) { if (!inflight) await scanOnce(); await sleep(Math.max(minMonitorDelay, cfg.monitorDelay, backoffUntil - Date.now())); continue; }
+      if (IS_PAL || IS_GEN || BASE_OR_VANS) { if (!inflight) await scanOnce(); await sleep(Math.max(minMonitorDelay, cfg.monitorDelay, backoffUntil - Date.now())); continue; }
       if (inflight < (fast ? MAX_INFLIGHT : NOW_INFLIGHT)) scanOnce();
       await sleep(Math.max(20, Math.max(fast ? FAST_MS : NOW_MS, cfg.monitorDelay) * pace + Math.random() * 40 - (Date.now() - t0)));
     }
   }
 
   function start(now) {
-    if (IS_GEN && (starting || inflight)) {
+    if ((IS_GEN || BASE_OR_VANS) && (starting || inflight)) {
       log('前回の通信が終わってから実行してください');
       return;
     }
     readCfg();
     if (!cfg.items.slice(0, cfg.kwCount).some((i) => i.kw.trim())) { log(L('\u30ad\u30fc\u30ef\u30fc\u30c9\u3092\u5165\u529b\u3057\u3066\u304f\u3060\u3055\u3044', 'H\u00e3y nh\u1eadp t\u1eeb kh\u00f3a')); return; }
     if (!now && !/^\d{1,2}:\d{2}$/.test(cfg.open || '')) { log(L('\u8ca9\u58f2\u958b\u59cb\u6642\u523b\u3092\u5165\u529b\u3057\u3066\u304f\u3060\u3055\u3044', 'H\u00e3y nh\u1eadp gi\u1edd m\u1edf b\u00e1n')); return; }
-    if (IS_HM || IS_BUF) {                         // SFCC: d\u00f9ng trang danh s\u00e1ch \u0111ang m\u1edf (New / All / danh m\u1ee5c) l\u00e0m ngu\u1ed3n qu\u00e9t
+    if (IS_HM || IS_BUF || IS_VANS) {                         // SFCC: d\u00f9ng trang danh s\u00e1ch \u0111ang m\u1edf (New / All / danh m\u1ee5c) l\u00e0m ngu\u1ed3n qu\u00e9t
       const g = document.querySelector('[data-url*="Search-UpdateGrid"]');
       if (g) { cfg.grid = g.getAttribute('data-url'); save(K_CFG, cfg); }
       log(L('\u76e3\u8996\u30da\u30fc\u30b8: ', 'Trang qu\u00e9t: ') + decodeURIComponent((cfg.grid || 'cgid=all').replace(/^.*Search-UpdateGrid\??/, '')));
@@ -3070,7 +3213,7 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
       });
       return;
     }
-    shop.clearAll().then((n) => { if (n) log(L(`\u958b\u59cb\u524d\u306b\u30ab\u30fc\u30c8\u3092\u7a7a\u306b\u3057\u307e\u3057\u305f\uff08${n}\u4ef6\uff09`, `\u0110\u00e3 d\u1ecdn gi\u1ecf tr\u01b0\u1edbc khi ch\u1ea1y (${n} m\u00f3n)`)); }).catch(() => {});
+    if (!BASE_OR_VANS) shop.clearAll().then((n) => { if (n) log(L(`\u958b\u59cb\u524d\u306b\u30ab\u30fc\u30c8\u3092\u7a7a\u306b\u3057\u307e\u3057\u305f\uff08${n}\u4ef6\uff09`, `\u0110\u00e3 d\u1ecdn gi\u1ecf tr\u01b0\u1edbc khi ch\u1ea1y (${n} m\u00f3n)`)); }).catch(() => {});
     log(now ? L(`${SHOP}: \u4eca\u3059\u3050\u76e3\u8996`, `${SHOP}: canh h\u00e0ng ngay`) : L(`${SHOP}: ${cfg.open}\uff08\u65e5\u672c\u6642\u9593\uff09\u307e\u3067\u5f85\u6a5f`, `${SHOP}: ch\u1edd t\u1edbi ${cfg.open} gi\u1edd Nh\u1eadt`));
     run();
   }
@@ -3119,12 +3262,14 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
   let sxRoot = null;                          // Shadow DOM ch\u1ee9a khung BOT
   const $ = (id) => (sxRoot ? sxRoot.getElementById(id) : null);
 
-  const ui = load(K_UI, { top: true, hide: IS_GEN });
+  const ui = load(K_UI, { top: true, hide: IS_GEN || IS_BASE });
   const box = document.createElement('div');
   box.id = 'sxbbox';
   const goLabel = (t) => (t ? L(`${t} \u306b\u4e88\u7d04\u30fb\u81ea\u52d5\u30b9\u30bf\u30fc\u30c8`, `H\u1eb9n \u0111\u1ebfn ${t} T\u1ef1 B\u1eadt`) : L('\u8ca9\u58f2\u958b\u59cb\u6642\u523b\u3092\u5165\u529b\u3057\u3066\u304f\u3060\u3055\u3044', 'H\u00e3y nh\u1eadp gi\u1edd m\u1edf b\u00e1n'));
   const qtySel = (id) => `<select id="${id}">${Array.from({ length: MAX_QTY }, (_, i) => `<option>${i + 1}</option>`).join('')}</select>`;
-  const DESC = IS_GEN
+  const DESC = IS_BASE ? 'BASEショップ。商品リンクまたは商品ID・商品名と種類を入力してください。'
+    : IS_VANS ? 'Vans JP。商品コードとサイズを入力してください。カート追加後は公式カートに進みます。'
+    : IS_GEN
     ? L(`${SHOP} : Shopify\u5e97\u8217\u3092\u81ea\u52d5\u8a8d\u8b58\u3002\u5148\u306b\u4f4f\u6240\u30fb\u652f\u6255\u3044\u60c5\u5831\u3092\u6e96\u5099\u3002\u30ad\u30fc\u30ef\u30fc\u30c9\uff08\u5546\u54c1\u540d\u306e\u4e00\u90e8\uff09\uff0b\u8272\uff0b\u30b5\u30a4\u30ba\uff0b\u500b\u6570 \u2192 \u6642\u523b\u4e88\u7d04 \u307e\u305f\u306f\u300c\u3059\u3050\u5b9f\u884c\u300d\u3002`,
         `${SHOP} : t\u1ef1 nh\u1eadn shop Shopify. Chu\u1ea9n b\u1ecb s\u1eb5n \u0111\u1ecba ch\u1ec9 + thanh to\u00e1n. Nh\u1eadp t\u1eeb kh\u00f3a (1 ph\u1ea7n t\u00ean SP) + m\u00e0u + size + s\u1ed1 l\u01b0\u1ee3ng \u2192 h\u1eb9n gi\u1edd ho\u1eb7c "Ch\u1ea1y Ngay".`)
     : IS_SUP
@@ -3183,15 +3328,15 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
 <div class="body">
   <div class="desc">${DESC}</div>${UZURA_CURRENT ? `<div class="desc">対応店舗: ${SHOP} ／ 商品取得形式を確認済み・実購入は未検証</div>` : ''}
   <div class="r"><span class="lb">\u23f0</span><input type="time" id="sxbopen"><span class="desc" style="margin:0">${L('\u8ca9\u58f2\u958b\u59cb\uff08\u65e5\u672c\u6642\u9593\uff09', 'Gi\u1edd m\u1edf b\u00e1n (gi\u1edd Nh\u1eadt)')}</span></div>
-  <div class="r"><label class="desc" for="sxbmonitor">モニターディレイ（ms）</label><input id="sxbmonitor" type="number" min="${minMonitorDelay}" max="30000" step="1" inputmode="numeric" placeholder="自動"></div>
-  ${Array.from({ length: MAX_KW }, (_, i) => `<div class="kw" id="sxbr${i}"><div class="r"><span class="lb">KW${i + 1}</span><input id="sxbk${i}" placeholder="${IS_SUP ? L('\u4f8b: polartec jacket', 'VD: polartec jacket') : L('\u4f8b: tee', 'VD: tee')}"></div>` +
-    `<div class="r"><span class="lb"></span><input id="sxbc${i}" placeholder="${L('\u8272\uff08\u4f8b: black\uff09', 'M\u00e0u (VD: black)')}"><input class="sz" id="sxbs${i}" placeholder="${L('\u30b5\u30a4\u30ba', 'Size')}">${qtySel('sxbq' + i)}</div></div>`).join('')}
+  <div class="r"${BASE_OR_VANS ? ' hidden' : ''}><label class="desc" for="sxbmonitor">モニターディレイ（ms）</label><input id="sxbmonitor" type="number" min="${minMonitorDelay}" max="30000" step="1" inputmode="numeric" placeholder="自動"></div>
+  ${Array.from({ length: MAX_KW }, (_, i) => `<div class="kw" id="sxbr${i}"><div class="r"><span class="lb">KW${i + 1}</span><input id="sxbk${i}" placeholder="${IS_BASE ? '例: 商品リンク …/items/123456' : IS_VANS ? '例: VN000Z3DBLA1' : IS_SUP ? L('\u4f8b: polartec jacket', 'VD: polartec jacket') : L('\u4f8b: tee', 'VD: tee')}"></div>` +
+    `<div class="r"><span class="lb"></span><input id="sxbc${i}" placeholder="${L('\u8272\uff08\u4f8b: black\uff09', 'M\u00e0u (VD: black)')}"><input class="sz" id="sxbs${i}" placeholder="${IS_BASE ? 'M&L' : IS_VANS ? '26&27' : L('\u30b5\u30a4\u30ba', 'Size')}">${qtySel('sxbq' + i)}</div></div>`).join('')}
   <div class="r"><button id="sxbadd">\uff0b ${L('\u30ad\u30fc\u30ef\u30fc\u30c9\u8ffd\u52a0', 'Th\u00eam t\u1eeb kh\u00f3a')}</button><button id="sxbdel">\uff0d</button><span class="desc" id="sxbcnt" style="margin:0"></span></div>
   <div class="desc">${L('\u30ad\u30fc\u30ef\u30fc\u30c9: \u5546\u54c1\u540d\u306e\u4e00\u90e8\u3067OK\uff08\u4f8b: faux fur / polartec jacket\uff09\u3002\u8272\u30fb\u30b5\u30a4\u30ba:\u300cblack,white\u300d\u300cM,L\u300d= \u512a\u5148\u9806\u3001\u7a7a\u6b04 = \u5728\u5eab\u306e\u3042\u308b\u3082\u306e',
     'T\u1eeb kh\u00f3a: ch\u1ec9 c\u1ea7n 1 ph\u1ea7n t\u00ean (VD faux fur / polartec jacket). M\u00e0u / Size: "black,white" "M,L" = \u01b0u ti\u00ean theo th\u1ee9 t\u1ef1, \u0111\u1ec3 tr\u1ed1ng = c\u00e1i n\u00e0o c\u00f2n c\u0169ng mua')}<br>${IS_SHOPIFY
       ? L('\u30d0\u30ea\u30a2\u30f3\u30c8ID\uff08\u6570\u5b57\u306e\u307f \u4f8b 42728889876830\uff09\u3092\u5165\u308c\u308b\u3068\u3001\u305d\u306e\u5546\u54c1\u30fb\u30b5\u30a4\u30ba\u3092\u76f4\u63a5\u8cfc\u5165\u3057\u307e\u3059\u3002', 'Nh\u1eadp variant ID (ch\u1ec9 s\u1ed1, VD 42728889876830) = mua th\u1eb3ng \u0111\u00fang m\u00f3n + size \u0111\u00f3.')
       : L('\u5546\u54c1\u30b3\u30fc\u30c9\uff08\u4f8b BF31TE050BK903\uff09\u3092\u5165\u308c\u308b\u3068\u3001\u305d\u306e\u30b3\u30fc\u30c9\u3092\u76f4\u63a5\u8cfc\u5165\u3057\u307e\u3059\u3002', 'Nh\u1eadp m\u00e3 h\u00e0ng (VD BF31TE050BK903) = mua th\u1eb3ng \u0111\u00fang m\u00e3 \u0111\u00f3.')}</div>
-  ${BUY_HTML}
+  ${BASE_OR_VANS ? '' : BUY_HTML}
   <div class="r btns"><button class="main" id="sxbgo">${goLabel(cfg.open)}</button><button id="sxbnow">${L('\u3059\u3050\u5b9f\u884c', 'Ch\u1ea1y Ngay')}</button><button id="sxbstop">${L('\u505c\u6b62', 'D\u1eebng')}</button><button id="sxblogb">${L('\u30ed\u30b0\u3092\u898b\u308b', 'Xem Log')}</button></div>
   <div id="sxblogw" style="display:none"><div class="r"><button id="sxbclr">${L('\u30ed\u30b0\u6d88\u53bb', 'X\u00f3a log')}</button><button id="sxbcopy">${L('\u30ed\u30b0\u3092\u30b3\u30d4\u30fc', 'Sao ch\u00e9p log')}</button><span class="desc" id="sxblogn" style="margin:0"></span></div><div id="sxblog"></div></div>
 </div>`;
@@ -3224,7 +3369,7 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
   $('sxbmonitor').value = cfg.monitorDelay || '';
   // \u0111\u1ed5i ch\u1eef n\u00fat khi g\u00f5 gi\u1edd ('input', kh\u00f4ng d\u00f9ng 'change' \u2013 Safari b\u1ecf m\u1ea5t c\u00fa b\u1ea5m khi \u00f4 m\u1ea5t focus)
   $('sxbopen').addEventListener('input', () => { const t = goLabel($('sxbopen').value); if ($('sxbgo').textContent !== t) $('sxbgo').textContent = t; });
-  {
+  if (!BASE_OR_VANS) {
     for (const k of BUY_KEYS) $('sxbi_' + k).value = buyCfg[k] || (k === 'pay' ? 'card' : '');
     buyCfg.fill = true; buyCfg.auto = true; save(K_BUY, buyCfg);
     if (!$('sxbi_pay').value) $('sxbi_pay').value = 'card';      // shop kh\u00f4ng c\u00f3 c\u00e1ch \u0111\u00e3 l\u01b0u (VD \u4ee3\u5f15\u304d \u1edf HUMAN MADE) -> th\u1ebb
@@ -3308,11 +3453,12 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && !ON_CHECKOUT && (IS_PAL_STORE || IS_S
     const body = box.querySelector('.body');
     if (e.detail) {
       if (capPrev) return;
-      capPrev = { body: body.style.display, buy: $('sxbbuy').style.display, logw: $('sxblogw').style.display };
-      $('sxbbuy').style.display = 'none'; $('sxblogw').style.display = 'none'; body.style.display = 'none';
+      capPrev = { body: body.style.display, buy: $('sxbbuy')?.style.display, logw: $('sxblogw').style.display };
+      if ($('sxbbuy')) $('sxbbuy').style.display = 'none';
+      $('sxblogw').style.display = 'none'; body.style.display = 'none';
       log(L('CAPTCHA \u304c\u51fa\u305f\u306e\u3067\u8a2d\u5b9a\u3092\u9589\u3058\u307e\u3057\u305f\uff08\u89e3\u304d\u7d42\u308f\u308b\u307e\u3067\u3088\u3051\u3066\u3044\u307e\u3059\uff09', 'C\u00f3 CAPTCHA \u2192 \u0111\u00e3 \u0111\u00f3ng c\u00e0i \u0111\u1eb7t, BOT tr\u00e1nh ch\u1ed7 t\u1edbi khi b\u1ea1n gi\u1ea3i xong'));
     } else if (capPrev) {
-      body.style.display = capPrev.body; $('sxbbuy').style.display = capPrev.buy; $('sxblogw').style.display = capPrev.logw; capPrev = null;
+      body.style.display = capPrev.body; if ($('sxbbuy')) $('sxbbuy').style.display = capPrev.buy; $('sxblogw').style.display = capPrev.logw; capPrev = null;
       log(L('CAPTCHA \u304c\u6d88\u3048\u305f\u306e\u3067\u30d1\u30cd\u30eb\u3092\u623b\u3057\u307e\u3057\u305f', 'CAPTCHA \u0111\u00e3 xong \u2192 tr\u1ea3 b\u1ea3ng BOT v\u1ec1 nh\u01b0 c\u0169'));
     }
   });
