@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         うずら BOT — Mellojoy・Shop・LivePocket対応
 // @namespace    uzura.mellojoy.shop
-// @version      2.1.44.10973
+// @version      2.1.44.10974
 // @updateURL    https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.meta.js
 // @downloadURL  https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.user.js
 // @description  Mellojoy・Shopify・Supreme・HUMAN MADE・Buffer・Palace・and ST・VANS Japan・BASEの購入補助。購入成功時のDiscord通知に対応。
@@ -35,23 +35,36 @@ if (location.hostname === "livepocket.jp") {
   const root = host.attachShadow({ mode: 'open' });
   root.innerHTML = `
     <style>
-      :host { position:fixed; left:8px; right:8px; bottom:calc(8px + env(safe-area-inset-bottom)); z-index:10000; color-scheme:dark; font:14px system-ui; }
+      :host { position:fixed; left:8px; right:8px; top:calc(8px + env(safe-area-inset-top)); z-index:2147483647; color-scheme:dark; font:14px system-ui; }
+      :host([data-bottom]) { top:auto; bottom:calc(76px + env(safe-area-inset-bottom)); }
       * { box-sizing:border-box; }
-      section { max-width:440px; max-height:65vh; overflow:auto; margin:auto; background:#101f36; color:white; border:1px solid #536f95; border-radius:16px; padding:12px; box-shadow:0 8px 24px #0007; }
+      [hidden] { display:none !important; }
+      header { margin-bottom:0; }
+      header strong { font-size:18px; line-height:1.1; }
+      header small { display:block; color:#b7c8df; margin-top:4px; font-size:12px; }
+      .icon { display:grid; place-items:center; flex:none; width:38px; height:38px; border-radius:50%; background:white; color:#203a5d; font-size:22px; font-weight:800; }
+      #launcher { display:block; margin:0 0 0 max(0px, calc((100% - 440px) / 2)); font-weight:700; }
+      #body label { margin-top:6px; }
+      #jump { width:100%; margin-top:6px; }
+      #controls { position:sticky; bottom:-12px; background:#101f36; padding:6px 0 8px; }
+      #controls .row { margin-bottom:0; }
+      section { max-width:440px; max-height:70vh; max-height:70dvh; overflow:auto; margin:auto; background:#101f36; color:white; border:1px solid #536f95; border-radius:16px; padding:12px; box-shadow:0 8px 24px #0007; }
       header,.row { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
       strong { flex:1; }
       label { display:grid; gap:4px; flex:1; min-width:0; }
       button,input,select { font:inherit; border:1px solid #536f95; border-radius:8px; background:#203a5d; color:white; padding:8px; min-width:0; }
       input,select { font-size:16px; width:100%; }
-      button { min-height:38px; cursor:pointer; }
+      button { min-height:44px; cursor:pointer; }
       .commands button { flex:1; }
       .primary { width:100%; margin-bottom:8px; background:#edf3fd; color:#102139; font-weight:700; }
       #status { margin:6px 0; }
       pre { white-space:pre-wrap; max-height:9em; overflow:auto; }
     </style>
-    <section>
-      <header><strong>うずら BOT · LivePocket</strong><button id="toggle" aria-expanded="false">開く</button></header>
-      <div id="body" hidden>
+    <button id="launcher" type="button" aria-controls="panel" aria-expanded="true" hidden>U · LivePocket</button>
+    <section id="panel" aria-label="うずら BOT LivePocket">
+      <header><span class="icon" aria-hidden="true">U</span><strong>うずら BOT<small>LivePocket · v2.1.44.10974</small></strong><button id="position" type="button">上下</button><button id="toggle" type="button">隠す</button></header>
+      <p id="status" role="status">停止中</p>
+      <div id="body">
         <div id="ticket">
           <label>券種モード<select id="mode"><option value="slots">時間帯指定</option><option value="regular">通常チケット</option></select></label>
           <label>希望枠（優先順）<input id="slots" placeholder="例 11:05, 11:20, 11:35"></label>
@@ -59,14 +72,16 @@ if (location.hostname === "livepocket.jp") {
             <label>枚数<select id="quantity"><option value="1">1枚</option><option value="2">2枚</option></select></label>
             <label>受付開始（日本時間）<input id="time" type="time" step="1"></label>
           </div>
-          <button class="primary" id="schedule">予約・自動スタート</button>
         </div>
         <div id="payment" hidden>
           <label>支払い方法<select id="method"><option value="">選択しない</option><option>クレジット</option><option>コンビニ</option><option>PayPay</option></select></label>
         </div>
-        <div class="row commands"><button id="run">すぐ実行</button><button id="stop">停止</button><button id="logs" aria-expanded="false">ログを見る</button></div>
-        <button id="jump" class="primary">公式の申込・進行ボタンへ</button>
-        <p id="status" role="status">停止中</p><div id="logPanel" hidden><button id="clear">ログ消去</button><pre id="log"></pre></div>
+        <button id="jump" type="button">公式の申込・進行ボタンへ</button>
+        <div id="logPanel" hidden><button id="clear">ログ消去</button><pre id="log"></pre></div>
+        <div id="controls">
+          <button class="primary" id="schedule">予約・自動スタート</button>
+          <div class="row commands"><button id="run">すぐ実行</button><button id="stop">停止</button><button id="logs" aria-expanded="false">ログを見る</button></div>
+        </div>
       </div>
     </section>`;
   document.body.append(host);
@@ -76,6 +91,7 @@ if (location.hostname === "livepocket.jp") {
   const quantity = byId('quantity');
   const time = byId('time');
   const method = byId('method');
+  byId('schedule').hidden = !eventPage;
   byId('ticket').hidden = !eventPage;
   byId('payment').hidden = eventPage;
   let reservation;
@@ -243,7 +259,14 @@ if (location.hostname === "livepocket.jp") {
     button.textContent = content.hidden ? closedText : openText;
     button.setAttribute('aria-expanded', String(!content.hidden));
   }
-  byId('toggle').onclick = () => toggle(byId('toggle'), byId('body'), '閉じる', '開く');
+  byId('position').onclick = () => host.toggleAttribute('data-bottom');
+  function showPanel(open) {
+    byId('panel').hidden = !open;
+    byId('launcher').hidden = open;
+    byId('launcher').setAttribute('aria-expanded', String(open));
+  }
+  byId('toggle').onclick = () => showPanel(false);
+  byId('launcher').onclick = () => showPanel(true);
   byId('clear').onclick = () => {
     log = [];
     byId('log').textContent = '';
