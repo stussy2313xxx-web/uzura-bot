@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         うずら BOT — Mellojoy・Shop対応
+// @name         うずら BOT — Mellojoy・Shop・LivePocket対応
 // @namespace    uzura.mellojoy.shop
-// @version      2.1.44.10972
+// @version      2.1.44.10973
 // @updateURL    https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.meta.js
 // @downloadURL  https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.user.js
 // @description  Mellojoy・Shopify・Supreme・HUMAN MADE・Buffer・Palace・and ST・VANS Japan・BASEの購入補助。購入成功時のDiscord通知に対応。
@@ -13,6 +13,249 @@
 // @connect      discord.com
 // @inject-into  content
 // ==/UserScript==
+// LivePocket ticket panel.
+if (location.hostname === "livepocket.jp") {
+  const mountLivePocket = () => {
+(() => {
+  'use strict';
+  if (location.hostname !== 'livepocket.jp') return;
+  const eventRoute = /^\/(?:t|e)\/[\w-]+\/?$|^\/e\/[\w-]+\/receptions\/\d+\/tickets\/?$/;
+  const eventPage = eventRoute.test(location.pathname);
+  const referrer = document.referrer && new URL(document.referrer);
+  const nextPage = referrer && referrer.origin === location.origin &&
+    eventRoute.test(referrer.pathname);
+  if (window.top !== window || (!eventPage && !nextPage)) return;
+
+  const event = (eventPage ? location.pathname : referrer.pathname).split('/').slice(1, 3).join('/');
+  const key = 'uzura-livepocket-combined:' + event;
+  const logKey = key + ':log';
+  const timerKey = key + ':timer:' + location.pathname;
+  const normalize = value => value.normalize('NFKC').replace(/\s+/g, ' ').trim();
+  const host = document.createElement('aside');
+  const root = host.attachShadow({ mode: 'open' });
+  root.innerHTML = `
+    <style>
+      :host { position:fixed; left:8px; right:8px; bottom:calc(8px + env(safe-area-inset-bottom)); z-index:10000; color-scheme:dark; font:14px system-ui; }
+      * { box-sizing:border-box; }
+      section { max-width:440px; max-height:65vh; overflow:auto; margin:auto; background:#101f36; color:white; border:1px solid #536f95; border-radius:16px; padding:12px; box-shadow:0 8px 24px #0007; }
+      header,.row { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
+      strong { flex:1; }
+      label { display:grid; gap:4px; flex:1; min-width:0; }
+      button,input,select { font:inherit; border:1px solid #536f95; border-radius:8px; background:#203a5d; color:white; padding:8px; min-width:0; }
+      input,select { font-size:16px; width:100%; }
+      button { min-height:38px; cursor:pointer; }
+      .commands button { flex:1; }
+      .primary { width:100%; margin-bottom:8px; background:#edf3fd; color:#102139; font-weight:700; }
+      #status { margin:6px 0; }
+      pre { white-space:pre-wrap; max-height:9em; overflow:auto; }
+    </style>
+    <section>
+      <header><strong>うずら BOT · LivePocket</strong><button id="toggle" aria-expanded="false">開く</button></header>
+      <div id="body" hidden>
+        <div id="ticket">
+          <label>券種モード<select id="mode"><option value="slots">時間帯指定</option><option value="regular">通常チケット</option></select></label>
+          <label>希望枠（優先順）<input id="slots" placeholder="例 11:05, 11:20, 11:35"></label>
+          <div class="row">
+            <label>枚数<select id="quantity"><option value="1">1枚</option><option value="2">2枚</option></select></label>
+            <label>受付開始（日本時間）<input id="time" type="time" step="1"></label>
+          </div>
+          <button class="primary" id="schedule">予約・自動スタート</button>
+        </div>
+        <div id="payment" hidden>
+          <label>支払い方法<select id="method"><option value="">選択しない</option><option>クレジット</option><option>コンビニ</option><option>PayPay</option></select></label>
+        </div>
+        <div class="row commands"><button id="run">すぐ実行</button><button id="stop">停止</button><button id="logs" aria-expanded="false">ログを見る</button></div>
+        <button id="jump" class="primary">公式の申込・進行ボタンへ</button>
+        <p id="status" role="status">停止中</p><div id="logPanel" hidden><button id="clear">ログ消去</button><pre id="log"></pre></div>
+      </div>
+    </section>`;
+  document.body.append(host);
+
+  const byId = id => root.getElementById(id);
+  const slots = byId('slots');
+  const quantity = byId('quantity');
+  const time = byId('time');
+  const method = byId('method');
+  byId('ticket').hidden = !eventPage;
+  byId('payment').hidden = eventPage;
+  let reservation;
+  let observer;
+  let deadline;
+  let reloadTimer;
+  let log = [];
+  try {
+    const savedLog = JSON.parse(sessionStorage.getItem(logKey) || '[]');
+    if (Array.isArray(savedLog)) log = savedLog.filter(entry => typeof entry === 'string').slice(0, 40);
+  } catch {}
+  byId('log').textContent = log.join('\n');
+  const report = message => {
+    byId('status').textContent = message;
+    log.unshift(new Date().toLocaleTimeString('ja-JP', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 }) + ' ' + message);
+    if (log.length > 40) log.pop();
+    try { sessionStorage.setItem(logKey, JSON.stringify(log)); } catch {}
+    byId('log').textContent = log.join('\n');
+  };
+  const refreshSchedule = () => {
+    byId('schedule').textContent = time.value ? time.value + ' に予約・自動スタート' : '予約・自動スタート';
+  };
+  try {
+    const saved = JSON.parse(localStorage.getItem(key) || '{}');
+    for (const field of [slots, quantity, time, method, byId('mode')]) {
+      if (typeof saved[field.id] === 'string') field.value = saved[field.id];
+    }
+  } catch {}
+  refreshSchedule();
+  time.addEventListener('input', refreshSchedule);
+  root.addEventListener('change', () => {
+    try {
+      localStorage.setItem(key, JSON.stringify(Object.fromEntries(
+        [slots, quantity, time, method, byId('mode')].map(field => [field.id, field.value])
+      )));
+    } catch {}
+  });
+
+  function stop() {
+    clearTimeout(reservation);
+    clearTimeout(deadline);
+    clearTimeout(reloadTimer);
+    try { sessionStorage.removeItem(timerKey); } catch {}
+    observer?.disconnect();
+    observer = undefined;
+  }
+
+  const visible = element => element.getClientRects().length && getComputedStyle(element).visibility === 'visible';
+  const labelFor = field => normalize(Array.from(field.labels || [], label => label.textContent).join(' '));
+  const enabled = element => !element.matches(':disabled,[aria-disabled="true"]');
+  function quantityChoices(field) {
+    const options = Array.from(field.options).filter(option => option.value !== '');
+    return options.length && options.every(option => /^\d+$/.test(option.value) &&
+      /^(?:\d+\s*枚?|選択しない|未選択)$/.test(normalize(option.textContent))) ? options : [];
+  }
+
+  function selectSlot(preferences, count, regular) {
+    const fields = Array.from(document.querySelectorAll('main select, form select'))
+      .filter(field => visible(field) && enabled(field) && quantityChoices(field).length);
+    if (fields.some(field => Number(field.value) > 0)) {
+      report('選択済みの枚数を確認してください。');
+      return true;
+    }
+    for (const preference of regular ? ['通常チケット'] : preferences) {
+      const matches = regular ? fields : fields.filter(field => {
+        const row = field.closest('tr, li, fieldset, [class*="ticket"]');
+        const caption = labelFor(field) + ' ' + normalize(row?.innerText || '');
+        return (caption.match(/\d{1,2}:\d{2}/g) || []).includes(preference);
+      });
+      if (!regular && matches.length !== 1) continue;
+      const choice = matches.map(field => ({
+        field,
+        option: quantityChoices(field).find(item => Number(item.value) === count && enabled(item) &&
+          !item.closest('optgroup[disabled]'))
+      })).find(candidate => candidate.option);
+      if (!choice) continue;
+      const { field, option } = choice;
+      field.value = option.value;
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+      field.dispatchEvent(new Event('change', { bubbles: true }));
+      field.style.outline = '2px solid #00c853';
+      report(preference + ' の枠に ' + count + ' 枚を入力しました。申込は公式画面で行ってください。');
+      return true;
+    }
+    return false;
+  }
+
+  function start(scheduled) {
+    stop();
+    const preferences = [...new Set(normalize(slots.value).split(/[,、\s]+/).filter(Boolean))];
+    const count = Number(quantity.value);
+    const regular = byId('mode').value === 'regular';
+    if (!regular && (!preferences.length || preferences.some(slot => !/^(?:[01]?\d|2[0-3]):[0-5]\d$/.test(slot)))) {
+      report('希望枠を HH:MM で入力してください。');
+      return;
+    }
+    const run = (until = 0) => {
+      const check = () => {
+        if (selectSlot(preferences, count, regular)) stop();
+      };
+      report(until ? '受付開始後の券種を確認しています（最大20秒）。' : '券種の表示を待っています（最大60秒）。');
+      observer = new MutationObserver(check);
+      observer.observe(document.body, { childList:true, subtree:true, attributes:true, attributeFilter:['disabled','aria-disabled','class','hidden','style'] });
+      deadline = setTimeout(() => {
+        stop();
+        report('希望枠と枚数を一意に確認できませんでした。公式ページで確認してください。');
+      }, until ? Math.max(0, until - Date.now()) : 60000);
+      check();
+      if (until && observer) {
+        reloadTimer = setTimeout(() => {
+          if (Date.now() >= until || document.visibilityState !== 'visible' ||
+              /ロボット確認|verify (?:that )?you|too many requests|アクセス制限/i.test(document.body.innerText)) {
+            stop();
+            report('受付の再確認を終了しました。');
+            return;
+          }
+          try { sessionStorage.setItem(timerKey, String(until)); } catch { return; }
+          report('受付ページを再読み込みします。');
+          location.reload();
+        }, 1200);
+      }
+    };
+    if (!scheduled) { run(); return; }
+    if (scheduled === 'resume') { run(resumeUntil); return; }
+    if (!time.value) { report('受付開始時刻を入力してください。'); return; }
+    const now = Date.now();
+    const day = new Date(now + 9 * 3600000).toISOString().slice(0, 10);
+    const target = Date.parse(day + 'T' + (time.value.length === 5 ? time.value + ':00' : time.value) + '+09:00');
+    if (target <= now) { report('今日のこれからの時刻を入力してください。'); return; }
+    reservation = setTimeout(() => run(target + 20000), target - now);
+    report(time.value + '（日本時間）まで待機します。このタブを開いておいてください。');
+  }
+
+  let resumeUntil = 0;
+  try { resumeUntil = Number(sessionStorage.getItem(timerKey)); } catch {}
+  if (eventPage && resumeUntil > Date.now() && resumeUntil <= Date.now() + 20000) {
+    start('resume');
+  }
+
+  byId('schedule').onclick = () => start(true);
+  byId('run').onclick = () => {
+    if (eventPage) { start(false); return; }
+    if (!method.value) { report('支払い方法を指定してください。'); return; }
+    const matches = Array.from(document.querySelectorAll('input[type="radio"]')).filter(
+      field => enabled(field) && (visible(field) || Array.from(field.labels || []).some(visible)) &&
+        labelFor(field).toLowerCase().includes(method.value.toLowerCase())
+    );
+    if (matches.length !== 1) { report('支払い方法を一意に確認できませんでした。公式画面で選択してください。'); return; }
+    if (!matches[0].checked) matches[0].click();
+    report(matches[0].checked ? '支払い方法を選択しました。公式画面で内容を確認してください。' : '支払い方法を公式画面で選択してください。');
+  };
+  byId('stop').onclick = () => { stop(); report('停止しました。'); };
+  byId('jump').onclick = () => {
+    const actions = Array.from(document.querySelectorAll('main button, main a, main input[type="submit"], form button, form input[type="submit"]'))
+      .filter(element => enabled(element) && visible(element) &&
+        /^(?:お?申し込む|お申し込みへ進む|次へ|次へ進む|申込手続きへ進む|購入手続きへ進む)$/
+          .test(normalize(element.value || element.textContent || '')));
+    if (actions.length !== 1) { report('進行ボタンを一意に確認できませんでした。公式画面でご確認ください。'); return; }
+    actions[0].scrollIntoView({ block:'center' });
+    actions[0].focus({ preventScroll:true });
+    byId('toggle').click();
+  };
+  function toggle(button, content, openText, closedText) {
+    content.hidden = !content.hidden;
+    button.textContent = content.hidden ? closedText : openText;
+    button.setAttribute('aria-expanded', String(!content.hidden));
+  }
+  byId('toggle').onclick = () => toggle(byId('toggle'), byId('body'), '閉じる', '開く');
+  byId('clear').onclick = () => {
+    log = [];
+    byId('log').textContent = '';
+    try { sessionStorage.removeItem(logKey); } catch {}
+  };
+  byId('logs').onclick = () => toggle(byId('logs'), byId('logPanel'), 'ログを閉じる', 'ログを見る');
+})();
+  };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mountLivePocket, { once: true });
+  else mountLivePocket();
+} else {
+
 // Storefronts with their own cart controls.
 (function uzuraStorefrontCart() {
   const vans = /^(?:www\.)?vans\.co\.jp$/.test(location.hostname);
@@ -2067,7 +2310,7 @@ window.__synovashop = true;
 const SYNOVA_WEBHOOK = ''; // Author's fixed notification destination disabled.
 const SYNOVA_LOGO_B64 = '';
 const SYNOVA_NAME = 'うずら BOT';
-const UZURA_RELEASE = '2.1.44.10972';
+const UZURA_RELEASE = '2.1.44.10973';
 const SYNOVA_VERSION = '1.9.8';
 const SYNOVA_ICON = UZURA_SHOP_PANEL_ICON;
 const SYNOVA_TITLE = '';
@@ -4158,3 +4401,5 @@ if (!SYNOVA_DUP && !IN_FRAME && !IS_PCI && (IS_PAL || IS_SUP || IS_HM || IS_BUF 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', runShop, { once: true });
   else runShop();
 })();
+
+}
