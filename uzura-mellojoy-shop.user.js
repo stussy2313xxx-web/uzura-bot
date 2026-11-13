@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         うずら BOT — Mellojoy・Shop・LivePocket対応
 // @namespace    uzura.mellojoy.shop
-// @version      2.1.44.10974
+// @version      2.1.44.10975
 // @updateURL    https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.meta.js
 // @downloadURL  https://raw.githubusercontent.com/stussy2313xxx-web/uzura-bot/main/uzura-mellojoy-shop.user.js
 // @description  Mellojoy・Shopify・Supreme・HUMAN MADE・Buffer・Palace・and ST・VANS Japan・BASEの購入補助。購入成功時のDiscord通知に対応。
@@ -43,7 +43,10 @@ if (location.hostname === "livepocket.jp") {
       header strong { font-size:18px; line-height:1.1; }
       header small { display:block; color:#b7c8df; margin-top:4px; font-size:12px; }
       .icon { display:grid; place-items:center; flex:none; width:38px; height:38px; border-radius:50%; background:white; color:#203a5d; font-size:22px; font-weight:800; }
-      #launcher { display:block; margin:0 0 0 max(0px, calc((100% - 440px) / 2)); font-weight:700; }
+      #launcher { position:fixed; top:calc(8px + env(safe-area-inset-top)); right:12px; display:grid; place-items:center; width:52px; height:52px; min-height:0; padding:0; border:2px solid white; border-radius:50%; background:#101f36; box-shadow:0 4px 16px #0007; }
+      #launcher .icon { width:36px; height:36px; }
+      #launcher::after { content:''; position:absolute; top:1px; right:1px; width:12px; height:12px; border:2px solid #101f36; border-radius:50%; background:#808080; }
+      #launcher[data-active]::after { background:#2ecc71; }
       #body label { margin-top:6px; }
       #jump { width:100%; margin-top:6px; }
       #controls { position:sticky; bottom:-12px; background:#101f36; padding:6px 0 8px; }
@@ -60,9 +63,9 @@ if (location.hostname === "livepocket.jp") {
       #status { margin:6px 0; }
       pre { white-space:pre-wrap; max-height:9em; overflow:auto; }
     </style>
-    <button id="launcher" type="button" aria-controls="panel" aria-expanded="true" hidden>U · LivePocket</button>
+    <button id="launcher" type="button" aria-label="うずら BOT LivePocketを開く" aria-controls="panel" aria-expanded="true" hidden><span class="icon" aria-hidden="true">U</span></button>
     <section id="panel" aria-label="うずら BOT LivePocket">
-      <header><span class="icon" aria-hidden="true">U</span><strong>うずら BOT<small>LivePocket · v2.1.44.10974</small></strong><button id="position" type="button">上下</button><button id="toggle" type="button">隠す</button></header>
+      <header><span class="icon" aria-hidden="true">U</span><strong>うずら BOT<small>LivePocket · v2.1.44.10975</small></strong><button id="position" type="button">上下</button><button id="toggle" type="button">隠す</button></header>
       <p id="status" role="status">停止中</p>
       <div id="body">
         <div id="ticket">
@@ -131,6 +134,7 @@ if (location.hostname === "livepocket.jp") {
   });
 
   function stop() {
+    byId('launcher').removeAttribute('data-active');
     clearTimeout(reservation);
     clearTimeout(deadline);
     clearTimeout(reloadTimer);
@@ -193,6 +197,7 @@ if (location.hostname === "livepocket.jp") {
         if (selectSlot(preferences, count, regular)) stop();
       };
       report(until ? '受付開始後の券種を確認しています（最大20秒）。' : '券種の表示を待っています（最大60秒）。');
+      byId('launcher').setAttribute('data-active', '');
       observer = new MutationObserver(check);
       observer.observe(document.body, { childList:true, subtree:true, attributes:true, attributeFilter:['disabled','aria-disabled','class','hidden','style'] });
       deadline = setTimeout(() => {
@@ -221,6 +226,7 @@ if (location.hostname === "livepocket.jp") {
     const day = new Date(now + 9 * 3600000).toISOString().slice(0, 10);
     const target = Date.parse(day + 'T' + (time.value.length === 5 ? time.value + ':00' : time.value) + '+09:00');
     if (target <= now) { report('今日のこれからの時刻を入力してください。'); return; }
+    byId('launcher').setAttribute('data-active', '');
     reservation = setTimeout(() => run(target + 20000), target - now);
     report(time.value + '（日本時間）まで待機します。このタブを開いておいてください。');
   }
