@@ -1,6 +1,8 @@
-# うずら BOT v2.1.44.10942
+# うずら BOT v2.1.45.11003
 
 メロジョイUSは、アクセス制限（HTTP 429）が返った場合にショップ指定の時間を待ってから監視を再開します。入店抽選の画面操作では、選択した日付の枠が表示されてから操作します。iPhone総合版、メロジョイ専用版、Androidメロジョイ版に反映しています。
+
+iPhoneのメロジョイ・Shop版では、メロジョイ日本版もHTTP 429を受けたときに待機時間を表示して監視を再開します。LivePocketは単体版に分離しました。
 
 各カートBOTの「モニターディレイ（ms）」で在庫チェックの間隔を指定できます。1000msは1秒です。空欄は従来の自動設定を使います。既存の監視間隔より短くならないように、ストア・監視モードごとの下限を適用します。設定はストアごとに保存します。
 
@@ -10,7 +12,7 @@ Shopify共通対応では、商品詳細ページから開始すると開いて�
 
 and STは[公式WEBストア](https://www.dot-st.com/)で「うずら BOT · and ST」を開き、商品名・品番・商品URL、必要に応じて色とサイズを指定します。商品詳細を開いている場合は、商品名欄を空欄にできます。発売日時（日本時間）を予約するか、すぐ実行します。最大2分間確認し、通常販売の商品を1点カートに追加します。「配送先・支払い」から公式の登録画面を開けます。住所は公式マイページ、カードは公式の注文手続きで登録します。「ログを見る」には商品照合、カート追加、停止理由などが日本時間で表示されます。注文手続きは公式カートから進めてください。
 
-- iPhone。SafariのUserscriptsで [iPhone版](uzura-mellojoy-shop.user.js) を使います。導入済みの場合は、Userscriptsの「Updates」から「Check Updates」を実行してください。
+- iPhone。SafariのUserscriptsで [メロジョイ・Shop版](uzura-mellojoy-shop.user.js) と [LivePocket単体版](uzura-livepocket.user.js) を別々に登録します。導入済みのメロジョイ・Shop版は、Userscriptsの「Updates」から「Check Updates」を実行してください。LivePocketを使う場合は単体版を追加してください。
 - Android。FirefoxのTampermonkeyで [メロジョイ版](uzura-android-mellojoy.user.js) と [ショップ版](uzura-android-shops.user.js) を別々に登録します。VALLADはショップ版に入っています。
 
 [対応店舗一覧](SUPPORTED_STORES.md)
