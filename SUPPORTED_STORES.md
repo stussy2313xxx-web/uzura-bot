@@ -1,4 +1,4 @@
-# 対応店舗一覧 v2.1.44.10922
+# 対応店舗一覧 v2.1.45.11003
 
 専用処理: メロジョイ／Supreme／PALACE日本公式／HUMAN MADE／Buffer／VALLAD／and ST。
 
